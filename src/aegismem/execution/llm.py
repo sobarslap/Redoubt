@@ -30,12 +30,23 @@ class LLMError(AegisError):
 
 
 @dataclass(frozen=True)
+class ToolCall:
+    """A tool invocation the model requested — executed only through the guarded
+    Execute_Tool gateway, never directly. The model proposes; the gateway decides."""
+
+    tool: str
+    args: dict[str, object] = field(default_factory=dict)
+    operation: str | None = None
+
+
+@dataclass(frozen=True)
 class LLMResponse:
     text: str
     input_tokens: int = 0
     output_tokens: int = 0
     provider: str = ""
     model: str = ""
+    tool_calls: tuple[ToolCall, ...] = ()
 
 
 @runtime_checkable
@@ -51,15 +62,32 @@ def _est_tokens(text: str) -> int:
 
 @dataclass
 class MockProvider:
-    """Deterministic, offline LLM. Scripted responses matched by substring; falls
-    back to a grounded echo. No network, no key — the demo/tests run anywhere."""
+    """Deterministic, offline LLM. No network, no key — the demo/tests run anywhere.
+
+    ``scripts`` maps a prompt substring to a reply string. ``tool_plan`` maps a
+    substring to tool calls the mock will request *once* (until the prompt shows
+    those tools' results), so the agent's reason↔tool loop is exercised
+    deterministically.
+    """
 
     name: str = "mock"
     model: str = "mock-1"
     scripts: list[tuple[str, str]] = field(default_factory=list)
+    tool_plan: list[tuple[str, tuple[ToolCall, ...]]] = field(default_factory=list)
 
     def complete(self, prompt: str, *, system: str = "", max_tokens: int = 512) -> LLMResponse:
-        text = self._answer(prompt)
+        low = prompt.lower()
+        for needle, calls in self.tool_plan:
+            # Emit the tool calls only until their results are already in context.
+            if needle.lower() in low and not all(f"[tool:{c.tool}]" in prompt for c in calls):
+                return LLMResponse(
+                    provider=self.name,
+                    model=self.model,
+                    text="",
+                    input_tokens=_est_tokens(system + prompt),
+                    tool_calls=calls,
+                )
+        text = self._answer(low)
         return LLMResponse(
             text=text,
             input_tokens=_est_tokens(system + prompt),
@@ -68,12 +96,68 @@ class MockProvider:
             model=self.model,
         )
 
-    def _answer(self, prompt: str) -> str:
-        low = prompt.lower()
+    def _answer(self, low: str) -> str:
         for needle, reply in self.scripts:
             if needle.lower() in low:
                 return reply
         return "Acknowledged. I will use only the grounded facts provided and cite them."
+
+
+@dataclass
+class LLMUsage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    calls: int = 0
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+
+class SpendError(AegisError):
+    """Raised when a run exceeds its token or spend ceiling. Not retryable."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("spend_exceeded", ErrorCategory.BUDGET, message, stage="execution.llm")
+
+
+# USD per 1M tokens (input, output). Rough public list prices; used only for the
+# optional spend cap, and easy to update in one place.
+_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
+    "gemini-2.5-flash": (0.30, 2.50),
+    "claude-opus-5": (15.0, 75.0),
+    "claude-sonnet-5": (3.0, 15.0),
+    "mock-1": (0.0, 0.0),
+}
+
+
+@dataclass
+class CostGuard:
+    """Per-run token/spend ceiling enforced across every LLM call in the run.
+
+    ``charge`` accumulates a response's usage and raises :class:`SpendError` once a
+    ceiling is crossed — a deterministic guard against runaway cost, checked at the
+    boundary rather than hoped for."""
+
+    max_tokens: int = 200_000
+    max_usd: float | None = None
+    usage: LLMUsage = field(default_factory=LLMUsage)
+    spent_usd: float = 0.0
+
+    def charge(self, resp: LLMResponse) -> None:
+        self.usage.input_tokens += resp.input_tokens
+        self.usage.output_tokens += resp.output_tokens
+        self.usage.calls += 1
+        pin, pout = _PRICE_PER_MTOK.get(resp.model, (0.0, 0.0))
+        self.spent_usd += (resp.input_tokens * pin + resp.output_tokens * pout) / 1_000_000
+        if self.usage.total_tokens > self.max_tokens:
+            raise SpendError(
+                f"run token ceiling exceeded ({self.usage.total_tokens} > {self.max_tokens})"
+            )
+        if self.max_usd is not None and self.spent_usd > self.max_usd:
+            raise SpendError(
+                f"run spend ceiling exceeded (${self.spent_usd:.4f} > ${self.max_usd})"
+            )
 
 
 class GeminiProvider:  # pragma: no cover - requires network + key

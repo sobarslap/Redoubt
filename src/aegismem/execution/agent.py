@@ -20,12 +20,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from aegismem.api.models import AgentRequest, AgentResponse, Citation, RunStatus, Timings, Usage
-from aegismem.errors import AegisError
-from aegismem.execution.llm import LLMClient
+from aegismem.errors import AegisError, PermissionDeniedError
+from aegismem.execution.llm import CostGuard, LLMClient
 from aegismem.guardrails import SecurityBoundary
 from aegismem.guardrails.trust import Segment
+from aegismem.mcp.runtime import ToolRuntime
 from aegismem.memory.models import TrustLevel
-from aegismem.observability.tracer import Tracer
+from aegismem.observability.tracer import RunTrace, Tracer
 from aegismem.retrieval.router import JITRouter
 
 _SYSTEM_PROMPT = (
@@ -44,6 +45,9 @@ class AgentRuntime:
     documents: dict[str, str] = field(default_factory=dict)  # id -> content (retrieval + citations)
     secrets: frozenset[str] = frozenset()
     system_prompt: str = _SYSTEM_PROMPT
+    tools: ToolRuntime | None = None  # when set, the LLM can drive guarded tool calls
+    max_tool_steps: int = 4
+    max_run_tokens: int = 200_000
 
     def remember(self, memory_id: str, content: str) -> None:
         """Index a memory for retrieval (source of truth stays in the store)."""
@@ -53,6 +57,40 @@ class AgentRuntime:
     def forget(self, memory_id: str) -> None:
         self.documents.pop(memory_id, None)
         self.router.remove(memory_id)
+
+    def _reason(
+        self, run: RunTrace, question: str, context: str, guard: CostGuard
+    ) -> tuple[str, int]:
+        """Bounded reason↔tool loop. The model may request tool calls; each is
+        executed only through the guarded gateway, and its result (or refusal) is
+        fed back as data. Returns the final text and the number of tool steps."""
+        transcript = question
+        steps = 0
+        for step in range(self.max_tool_steps + 1):
+            resp = self.llm.complete(transcript, system=context)
+            guard.charge(resp)  # raises SpendError past the ceiling
+            if not resp.tool_calls or self.tools is None or step == self.max_tool_steps:
+                # Record the terminal call for replay and return the answer.
+                answer = resp.text
+                # record_llm invokes produce immediately, so this closure over the
+                # loop-local answer is safe (it never outlives the iteration).
+                run.record_llm(
+                    key=f"{question}#final{step}",
+                    request={"chars": len(transcript)},
+                    produce=lambda: answer,  # noqa: B023
+                )
+                return answer, steps
+            steps += 1
+            for call in resp.tool_calls:
+                try:
+                    ack = self.tools.execute_tool(call.tool, call.args, operation=call.operation)
+                    result = self.tools.read_tool_result(ack.ref).output
+                    line = f"[tool:{call.tool}] {result}"
+                except PermissionDeniedError as exc:
+                    # Refusal is data too — the model sees it and must proceed safely.
+                    line = f"[tool:{call.tool}] REFUSED: {exc.envelope.message}"
+                transcript += "\n" + line
+        return "", steps  # unreachable; the loop returns inside
 
     def handle(self, request: AgentRequest) -> AgentResponse:
         with self.tracer.run(request) as run:
@@ -84,7 +122,9 @@ class AgentRuntime:
                         for r in res.results
                     ]
 
-                # 3. Execution — reason over labeled, fenced context.
+                # 3. Execution — reason over labeled, fenced context, with a
+                #    bounded reason↔tool loop when tools are available. Cost is
+                #    enforced per run by the CostGuard.
                 with run.span("execution") as sp:
                     segments = [
                         Segment(
@@ -96,12 +136,14 @@ class AgentRuntime:
                         if r.memory_id in self.documents
                     ]
                     context = self.boundary.assemble(system=self.system_prompt, segments=segments)
-                    llm_out = run.record_llm(
-                        key=request.input,
-                        request={"context_chars": len(context)},
-                        produce=lambda: self.llm.complete(request.input, system=context).text,
+                    guard = CostGuard(max_tokens=self.max_run_tokens)
+                    llm_out, tool_steps = self._reason(run, request.input, context, guard)
+                    sp.set(
+                        provider=self.llm.name,
+                        grounded_memories=len(segments),
+                        tool_steps=tool_steps,
+                        tokens=guard.usage.total_tokens,
                     )
-                    sp.set(provider=self.llm.name, grounded_memories=len(segments))
 
                 # 4. Output validation — leakage filter.
                 with run.span("output") as sp:

@@ -17,6 +17,7 @@ is identical.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from aegismem.api.models import AgentRequest
@@ -25,6 +26,7 @@ from aegismem.context.manager import ContextManager
 from aegismem.context.state import ConversationTurn, Role
 from aegismem.context.tokens import HeuristicTokenCounter
 from aegismem.execution.agent import AgentRuntime
+from aegismem.execution.factory import build_client
 from aegismem.execution.llm import MockProvider
 from aegismem.guardrails import SecurityBoundary
 from aegismem.mcp.gateway import AuthorizationPolicy, ExecuteToolGateway
@@ -89,8 +91,14 @@ def main() -> None:
     store = SQLiteMemoryStore(":memory:")
     tracer = Tracer(JSONLTraceStore(_TRACE))
     router = JITRouter(BM25Index(), VectorIndex(HashingEmbedder()), OverlapReranker(), top_k=3)
-    llm = MockProvider(
-        scripts=[
+
+    # Provider is resolved from config/models.yaml + env. Keyless -> offline mock
+    # (with scripted grounded answers); set GEMINI_API_KEY / ANTHROPIC_API_KEY to
+    # go live with an identical contract. AEGISMEM_LLM_ROLE picks the role.
+    role = os.environ.get("AEGISMEM_LLM_ROLE", "workhorse")
+    llm = build_client(role)
+    if isinstance(llm, MockProvider):
+        llm.scripts = [
             (
                 "remediation",
                 "Remediation: primary DB is Postgres (migrated from MySQL). Pool is near "
@@ -102,7 +110,7 @@ def main() -> None:
                 "Per the runbook, restart the service and scale replicas. [cites grounded memory]",
             ),
         ]
-    )
+    print(f"LLM provider: {llm.name}")
     runtime = AgentRuntime(
         llm=llm, router=router, tracer=tracer, boundary=SecurityBoundary(), documents={}
     )

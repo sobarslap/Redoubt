@@ -20,9 +20,18 @@ The total is a **4–8 week** range because two of these are genuinely optional.
 
 ---
 
-## Phase P1 — Real LLM providers, wired and integration-tested
+## Phase P1 — Real LLM providers, wired and integration-tested ✅ done
 **~3–5 days.** The `LLMClient` adapters (Gemini/Claude/Ollama) exist but have never
 touched a live API. Wire real calls behind the existing seam.
+
+> **Landed:** a `build_client(role)` factory resolving `models.yaml` roles →
+> provider+model, keys from env (keyless → offline mock; `strict=True` fails
+> loudly), wrapped in the resilient fallback chain. `CostGuard` enforces per-run
+> token + USD ceilings (`SpendError`). The agent gained a bounded reason↔tool loop
+> where the model proposes `ToolCall`s executed only through the guarded gateway —
+> unauthorized calls are refused mid-loop and fed back as data. The demo honors
+> `AEGISMEM_LLM_ROLE` and runs on any provider with an identical contract. Live
+> Gemini/Claude tests are network+key gated (skip in keyless CI).
 
 - Real `generate_content` / `messages.create` paths, streaming, real token accounting from provider usage.
 - Model routing from `config/models.yaml` roles (workhorse/reasoning/judge/offline) resolved by a factory.

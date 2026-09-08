@@ -6,25 +6,36 @@ retry/fallback wrapper) keeps every vendor SDK behind one seam.
 """
 
 from aegismem.execution.agent import AgentRuntime
+from aegismem.execution.factory import ProviderConfigError, build_client
 from aegismem.execution.llm import (
     ClaudeProvider,
+    CostGuard,
     GeminiProvider,
     LLMClient,
     LLMError,
     LLMResponse,
+    LLMUsage,
     MockProvider,
     OllamaProvider,
     ResilientClient,
+    SpendError,
+    ToolCall,
 )
 
 __all__ = [
     "AgentRuntime",
     "ClaudeProvider",
+    "CostGuard",
     "GeminiProvider",
     "LLMClient",
     "LLMError",
     "LLMResponse",
+    "LLMUsage",
     "MockProvider",
     "OllamaProvider",
+    "ProviderConfigError",
     "ResilientClient",
+    "SpendError",
+    "ToolCall",
+    "build_client",
 ]
