@@ -94,9 +94,7 @@ class SecurityBoundary:
     def assemble(
         self, *, system: str, developer: str = "", segments: list[Segment], nonce: str | None = None
     ) -> str:
-        return assemble_context(
-            system=system, developer=developer, segments=segments, nonce=nonce
-        )
+        return assemble_context(system=system, developer=developer, segments=segments, nonce=nonce)
 
     # -- ingest side ---------------------------------------------------------
 

@@ -135,14 +135,10 @@ class RunTrace:
 
     # -- recorded (replayable) calls ----------------------------------------
 
-    def record_llm(
-        self, key: str, request: dict[str, object], produce: Callable[[], str]
-    ) -> str:
+    def record_llm(self, key: str, request: dict[str, object], produce: Callable[[], str]) -> str:
         return self._record_call(CallKind.LLM, key, request, produce)
 
-    def record_tool(
-        self, key: str, request: dict[str, object], produce: Callable[[], str]
-    ) -> str:
+    def record_tool(self, key: str, request: dict[str, object], produce: Callable[[], str]) -> str:
         return self._record_call(CallKind.TOOL, key, request, produce)
 
     def _record_call(
@@ -168,18 +164,30 @@ class RunTrace:
                 latency = (time.perf_counter() - start) * 1000
                 self._emit(
                     CallRecord(
-                        run_id=self.run_id, trace_id=self.trace_id, call_kind=call_kind,
-                        seq=seq, key=key, request=request, response=response,
-                        latency_ms=round(latency, 4), failed=True,
+                        run_id=self.run_id,
+                        trace_id=self.trace_id,
+                        call_kind=call_kind,
+                        seq=seq,
+                        key=key,
+                        request=request,
+                        response=response,
+                        latency_ms=round(latency, 4),
+                        failed=True,
                     )
                 )
                 raise
             latency = (time.perf_counter() - start) * 1000
         self._emit(
             CallRecord(
-                run_id=self.run_id, trace_id=self.trace_id, call_kind=call_kind,
-                seq=seq, key=key, request=request, response=response,
-                latency_ms=round(latency, 4), failed=failed,
+                run_id=self.run_id,
+                trace_id=self.trace_id,
+                call_kind=call_kind,
+                seq=seq,
+                key=key,
+                request=request,
+                response=response,
+                latency_ms=round(latency, 4),
+                failed=failed,
             )
         )
         return response
@@ -224,9 +232,7 @@ class Tracer:
     def __init__(self, sink: TraceSink) -> None:
         self._sink = sink
 
-    def run(
-        self, request: AgentRequest, *, cache: ReplayCache | None = None
-    ) -> RunTrace:
+    def run(self, request: AgentRequest, *, cache: ReplayCache | None = None) -> RunTrace:
         return RunTrace(
             self._sink,
             run_id=_run_id(),

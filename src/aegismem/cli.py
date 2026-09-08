@@ -73,8 +73,9 @@ def _replay(run_id: str, trace_path: str, *, as_json: bool) -> int:
     print("pipeline:")
     for step in run.timeline:
         attrs = "  ".join(f"{k}={v}" for k, v in step.attributes.items())
-        print(f"  {step.seq:>2}. {step.name:<14} {step.duration_ms:>8.2f}ms  "
-              f"[{step.status}]  {attrs}")
+        print(
+            f"  {step.seq:>2}. {step.name:<14} {step.duration_ms:>8.2f}ms  [{step.status}]  {attrs}"
+        )
     if run.outcome:
         print(f"outcome: {run.outcome}")
     return 0

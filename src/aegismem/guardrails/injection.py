@@ -48,44 +48,78 @@ def _p(family: str, weight: float, pattern: str) -> _Pattern:
 
 # Each pattern carries a weight; a single high-weight hit is enough to block.
 _PATTERNS: tuple[_Pattern, ...] = (
-    _p(AttackFamily.INSTRUCTION_OVERRIDE, 0.9,
-       r"\bignore\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|rules?)"),
-    _p(AttackFamily.INSTRUCTION_OVERRIDE, 0.9,
-       r"\bdisregard\s+(?:all\s+)?(?:previous|prior|the\s+above|your)\s+\w+"),
-    _p(AttackFamily.INSTRUCTION_OVERRIDE, 0.7,
-       r"\b(?:forget|override)\s+(?:everything|your\s+(?:rules|instructions|guidelines))"),
+    _p(
+        AttackFamily.INSTRUCTION_OVERRIDE,
+        0.9,
+        r"\bignore\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|rules?)",
+    ),
+    _p(
+        AttackFamily.INSTRUCTION_OVERRIDE,
+        0.9,
+        r"\bdisregard\s+(?:all\s+)?(?:previous|prior|the\s+above|your)\s+\w+",
+    ),
+    _p(
+        AttackFamily.INSTRUCTION_OVERRIDE,
+        0.7,
+        r"\b(?:forget|override)\s+(?:everything|your\s+(?:rules|instructions|guidelines))",
+    ),
     _p(AttackFamily.INSTRUCTION_OVERRIDE, 0.6, r"\bnew\s+instructions?\s*:"),
-    _p(AttackFamily.FAKE_SYSTEM, 0.9,
-       r"(?m)^\s*(?:system|developer|assistant)\s*:\s*\S"),
+    _p(AttackFamily.FAKE_SYSTEM, 0.9, r"(?m)^\s*(?:system|developer|assistant)\s*:\s*\S"),
     _p(AttackFamily.FAKE_SYSTEM, 0.85, r"</?(?:system|system_prompt|im_start|im_end)\b"),
     _p(AttackFamily.FAKE_SYSTEM, 0.7, r"\bthis\s+is\s+(?:an?\s+)?(?:official|admin|system)\s+"),
     _p(AttackFamily.ROLE_HIJACK, 0.85, r"\byou\s+are\s+now\s+(?:a|an|the|no\s+longer)\b"),
     _p(AttackFamily.ROLE_HIJACK, 0.8, r"\b(?:act|behave|roleplay|pretend)\s+as\s+(?:if\s+)?"),
     _p(AttackFamily.ROLE_HIJACK, 0.8, r"\b(?:DAN|developer\s+mode|jailbreak\s+mode)\b"),
-    _p(AttackFamily.EXFILTRATION, 0.9,
-       r"\b(?:email|send|post|upload|exfiltrate|leak|transmit)\b.{0,40}"
-       r"\b(?:credential|password|secret|api[_\s-]?key|token|\.env|private\s+key)"),
-    _p(AttackFamily.EXFILTRATION, 0.8,
-       r"\b(?:send|post|curl|fetch|GET|POST)\b.{0,30}https?://"),
-    _p(AttackFamily.TOOL_HIJACK, 0.85,
-       r"\b(?:call|invoke|execute|run)\s+(?:the\s+)?(?:tool\s+)?"
-       r"(?:restart_service|delete_|drop_|shutdown|rm\s+-rf|Execute_Tool)"),
-    _p(AttackFamily.TOOL_HIJACK, 0.8,
-       r"\bmark\b.{0,30}\b(?:compromised|breached|deleted|resolved)\b"),
-    _p(AttackFamily.MEMORY_POISON, 0.85,
-       r"\b(?:remember|store|save|record)\s+(?:that\s+)?.{0,40}"
-       r"\b(?:always|forever|permanently|as\s+(?:a\s+)?fact)"),
-    _p(AttackFamily.MEMORY_POISON, 0.8,
-       r"\b(?:update|overwrite|replace|delete|forget)\s+(?:your\s+)?(?:memory|the\s+fact|all\s+memories)"),
-    _p(AttackFamily.SECRET_PROBE, 0.9,
-       r"\b(?:reveal|show|print|repeat|output|leak)\b.{0,30}"
-       r"\b(?:system\s+prompt|instructions|rules|api[_\s-]?key|secret|password)"),
-    _p(AttackFamily.SECRET_PROBE, 0.7,
-       r"\bwhat\s+(?:are|were)\s+your\s+(?:original\s+)?(?:instructions|rules|system\s+prompt)"),
-    _p(AttackFamily.OBFUSCATION, 0.7,
-       r"\b(?:base64|rot13|hex)\b.{0,40}\b(?:decode|execute|run|eval)"),
-    _p(AttackFamily.OBFUSCATION, 0.6,
-       r"\b(?:decode|deobfuscate)\b.{0,20}\bthen\b.{0,20}\b(?:run|execute)"),
+    _p(
+        AttackFamily.EXFILTRATION,
+        0.9,
+        r"\b(?:email|send|post|upload|exfiltrate|leak|transmit)\b.{0,40}"
+        r"\b(?:credential|password|secret|api[_\s-]?key|token|\.env|private\s+key)",
+    ),
+    _p(AttackFamily.EXFILTRATION, 0.8, r"\b(?:send|post|curl|fetch|GET|POST)\b.{0,30}https?://"),
+    _p(
+        AttackFamily.TOOL_HIJACK,
+        0.85,
+        r"\b(?:call|invoke|execute|run)\s+(?:the\s+)?(?:tool\s+)?"
+        r"(?:restart_service|delete_|drop_|shutdown|rm\s+-rf|Execute_Tool)",
+    ),
+    _p(
+        AttackFamily.TOOL_HIJACK,
+        0.8,
+        r"\bmark\b.{0,30}\b(?:compromised|breached|deleted|resolved)\b",
+    ),
+    _p(
+        AttackFamily.MEMORY_POISON,
+        0.85,
+        r"\b(?:remember|store|save|record)\s+(?:that\s+)?.{0,40}"
+        r"\b(?:always|forever|permanently|as\s+(?:a\s+)?fact)",
+    ),
+    _p(
+        AttackFamily.MEMORY_POISON,
+        0.8,
+        r"\b(?:update|overwrite|replace|delete|forget)\s+(?:your\s+)?(?:memory|the\s+fact|all\s+memories)",
+    ),
+    _p(
+        AttackFamily.SECRET_PROBE,
+        0.9,
+        r"\b(?:reveal|show|print|repeat|output|leak)\b.{0,30}"
+        r"\b(?:system\s+prompt|instructions|rules|api[_\s-]?key|secret|password)",
+    ),
+    _p(
+        AttackFamily.SECRET_PROBE,
+        0.7,
+        r"\bwhat\s+(?:are|were)\s+your\s+(?:original\s+)?(?:instructions|rules|system\s+prompt)",
+    ),
+    _p(
+        AttackFamily.OBFUSCATION,
+        0.7,
+        r"\b(?:base64|rot13|hex)\b.{0,40}\b(?:decode|execute|run|eval)",
+    ),
+    _p(
+        AttackFamily.OBFUSCATION,
+        0.6,
+        r"\b(?:decode|deobfuscate)\b.{0,20}\bthen\b.{0,20}\b(?:run|execute)",
+    ),
 )
 
 # Many-shot: N stacked fake dialogue turns is itself the attack.
@@ -109,9 +143,7 @@ class PromptInjectionScanner:
         try:
             return self._scan(text)
         except Exception:  # fail-closed: an unscannable input is treated as hostile
-            return InjectionVerdict(
-                blocked=True, score=1.0, families=["scanner_error"], matches=[]
-            )
+            return InjectionVerdict(blocked=True, score=1.0, families=["scanner_error"], matches=[])
 
     def _scan(self, text: str) -> InjectionVerdict:
         families: dict[str, float] = {}

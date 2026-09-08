@@ -28,8 +28,12 @@ _DETECTORS: tuple[_Detector, ...] = (
     _Detector("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     _Detector("openai_key", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b")),
     _Detector("bearer_token", re.compile(r"\bBearer\s+[A-Za-z0-9._\-]{16,}\b")),
-    _Detector("generic_secret", re.compile(
-        r"(?i)\b(?:api[_-]?key|secret|password|passwd|token)\b\s*[:=]\s*['\"]?[^\s'\"]{8,}")),
+    _Detector(
+        "generic_secret",
+        re.compile(
+            r"(?i)\b(?:api[_-]?key|secret|password|passwd|token)\b\s*[:=]\s*['\"]?[^\s'\"]{8,}"
+        ),
+    ),
     _Detector("email", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
     _Detector("ssn", re.compile(r"\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b")),
     _Detector("credit_card", re.compile(r"\b(?:\d[ -]?){13,19}\b"), luhn=True),

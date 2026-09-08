@@ -73,9 +73,7 @@ class MemoryWriteSanitizer:
         # trust MORE privileged than the ceiling (default USER), even if the
         # payload claims SYSTEM/DEVELOPER. Lower rank = more privileged.
         untrusted_origin = _untrusted_origin(data)
-        if untrusted_origin and trust_rank(data.trust) < trust_rank(
-            self.untrusted_write_max_trust
-        ):
+        if untrusted_origin and trust_rank(data.trust) < trust_rank(self.untrusted_write_max_trust):
             patch["trust"] = self.untrusted_write_max_trust
             trust_clamped = True
 

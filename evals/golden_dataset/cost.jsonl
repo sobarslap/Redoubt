@@ -1,0 +1,4 @@
+{"id": "cost_progressive_05", "category": "cost", "description": "progressive tool-schema injection stays a small fraction of the catalog", "params": {"metric": "progressive_injection"}, "expect": {"max_ratio": 0.5}}
+{"id": "cost_progressive_04", "category": "cost", "description": "even tighter injection budget", "params": {"metric": "progressive_injection"}, "expect": {"max_ratio": 0.45}}
+{"id": "cost_compaction_03", "category": "cost", "description": "compaction reduces token footprint materially", "params": {"metric": "compaction_reduction"}, "expect": {"min_reduction": 0.3}}
+{"id": "cost_compaction_05", "category": "cost", "description": "compaction achieves a large reduction on long runs", "params": {"metric": "compaction_reduction"}, "expect": {"min_reduction": 0.5}}
