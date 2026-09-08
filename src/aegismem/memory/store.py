@@ -10,13 +10,17 @@ inheriting from a base class.
 
 from __future__ import annotations
 
+import builtins
 import json
 import sqlite3
-from datetime import datetime
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from aegismem.errors import NotFoundError, StorageError
+from aegismem.memory.conflict import ConflictVerdict
+from aegismem.memory.lifecycle import MemoryTransition, assert_transition
 from aegismem.memory.models import (
     MemoryCreate,
     MemoryRecord,
@@ -24,6 +28,11 @@ from aegismem.memory.models import (
     MemoryType,
     TrustLevel,
 )
+from aegismem.memory.provenance import EdgeKind, ProvenanceView
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 @runtime_checkable
@@ -61,6 +70,42 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
 CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status);
+
+CREATE TABLE IF NOT EXISTS transitions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id    TEXT NOT NULL,
+    from_status  TEXT,
+    to_status    TEXT NOT NULL,
+    reason       TEXT NOT NULL,
+    source       TEXT NOT NULL,
+    trigger      TEXT NOT NULL,
+    prev_version INTEGER NOT NULL,
+    at           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_transitions_mem ON transitions(memory_id);
+
+CREATE TABLE IF NOT EXISTS provenance_edges (
+    id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    src_id TEXT NOT NULL,
+    dst_id TEXT NOT NULL,
+    kind   TEXT NOT NULL,
+    at     TEXT NOT NULL,
+    UNIQUE(src_id, dst_id, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_prov_src ON provenance_edges(src_id);
+CREATE INDEX IF NOT EXISTS idx_prov_dst ON provenance_edges(dst_id);
+
+CREATE TABLE IF NOT EXISTS review_queue (
+    id            TEXT PRIMARY KEY,
+    candidate_json TEXT NOT NULL,
+    existing_id   TEXT,
+    relation      TEXT NOT NULL,
+    confidence    REAL NOT NULL,
+    rationale     TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    at            TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_review_status ON review_queue(status);
 """
 
 
@@ -214,3 +259,137 @@ class SQLiteMemoryStore:
             params,
         ).fetchall()
         return [self._row_to_record(r) for r in rows]
+
+    # -- lifecycle (Phase 2) ---------------------------------------------------
+
+    def transition(
+        self,
+        memory_id: str,
+        to_status: MemoryStatus,
+        *,
+        reason: str,
+        source: str = "system",
+        trigger: str = "manual",
+    ) -> MemoryRecord:
+        """Move a memory along an allowed lifecycle edge, writing an audit row.
+
+        Refuses illegal edges via :func:`assert_transition` — the governed path
+        that upholds ``memory_corruption = 0``.
+        """
+        record = self.get(memory_id)
+        assert_transition(record.status, to_status)
+        from_status = record.status
+        prev_version = record.version
+        record.status = to_status
+        record.version += 1
+        record.touch()
+        try:
+            self._conn.execute(
+                "UPDATE memories SET status=?, version=?, updated_at=? WHERE id=?",
+                (record.status.value, record.version, record.updated_at.isoformat(), memory_id),
+            )
+            self._conn.execute(
+                """INSERT INTO transitions
+                   (memory_id, from_status, to_status, reason, source, trigger, prev_version, at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    memory_id,
+                    from_status.value,
+                    to_status.value,
+                    reason,
+                    source,
+                    trigger,
+                    prev_version,
+                    _utcnow_iso(),
+                ),
+            )
+            self._conn.commit()
+        except sqlite3.Error as exc:  # pragma: no cover - defensive
+            raise StorageError(
+                f"failed to transition memory: {exc}", stage="memory.transition"
+            ) from exc
+        return record
+
+    def history(self, memory_id: str) -> builtins.list[MemoryTransition]:
+        rows = self._conn.execute(
+            "SELECT * FROM transitions WHERE memory_id = ? ORDER BY id ASC", (memory_id,)
+        ).fetchall()
+        return [
+            MemoryTransition(
+                memory_id=r["memory_id"],
+                from_status=MemoryStatus(r["from_status"]) if r["from_status"] else None,
+                to_status=MemoryStatus(r["to_status"]),
+                reason=r["reason"],
+                source=r["source"],
+                trigger=r["trigger"],
+                prev_version=r["prev_version"],
+                at=datetime.fromisoformat(r["at"]),
+            )
+            for r in rows
+        ]
+
+    # -- provenance graph (Phase 2) --------------------------------------------
+
+    def add_edge(self, src_id: str, dst_id: str, kind: str) -> None:
+        """Insert a provenance edge ``src -> dst`` (idempotent)."""
+        EdgeKind(kind)  # validate vocabulary
+        self._conn.execute(
+            """INSERT OR IGNORE INTO provenance_edges (src_id, dst_id, kind, at)
+               VALUES (?,?,?,?)""",
+            (src_id, dst_id, kind, _utcnow_iso()),
+        )
+        self._conn.commit()
+
+    def provenance(self, memory_id: str) -> ProvenanceView:
+        """Return the provenance neighbourhood of ``memory_id``."""
+        self.get(memory_id)  # raises NotFoundError if absent
+        out = self._conn.execute(
+            "SELECT dst_id, kind FROM provenance_edges WHERE src_id = ?", (memory_id,)
+        ).fetchall()
+        inc = self._conn.execute(
+            "SELECT src_id, kind FROM provenance_edges WHERE dst_id = ?", (memory_id,)
+        ).fetchall()
+        view = ProvenanceView(memory_id=memory_id)
+        for r in out:
+            if r["kind"] == EdgeKind.SUPERSEDES:
+                view.supersedes.append(r["dst_id"])
+            elif r["kind"] == EdgeKind.DERIVED_FROM:
+                view.derived_from.append(r["dst_id"])
+            elif r["kind"] == EdgeKind.SUPPORTED_BY:
+                view.supported_by.append(r["dst_id"])
+        for r in inc:
+            if r["kind"] == EdgeKind.SUPERSEDES:
+                view.superseded_by.append(r["src_id"])
+            elif r["kind"] == EdgeKind.SUPPORTED_BY:
+                view.supports.append(r["src_id"])
+        return view
+
+    # -- human-review queue (Phase 2) ------------------------------------------
+
+    def enqueue_review(
+        self, candidate: MemoryCreate, existing_id: str, verdict: ConflictVerdict
+    ) -> str:
+        review_id = f"rev_{uuid.uuid4().hex[:16]}"
+        self._conn.execute(
+            """INSERT INTO review_queue
+               (id, candidate_json, existing_id, relation, confidence, rationale, status, at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                review_id,
+                candidate.model_dump_json(),
+                existing_id,
+                verdict.relation.value,
+                verdict.confidence,
+                verdict.rationale,
+                "pending",
+                _utcnow_iso(),
+            ),
+        )
+        self._conn.commit()
+        return review_id
+
+    def review_queue(self, status: str = "pending") -> builtins.list[dict[str, object]]:
+        rows = self._conn.execute(
+            "SELECT * FROM review_queue WHERE status = ? ORDER BY at ASC", (status,)
+        ).fetchall()
+        return [dict(r) for r in rows]
