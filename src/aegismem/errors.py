@@ -65,3 +65,37 @@ class StorageError(AegisError):
         super().__init__(
             "storage_error", ErrorCategory.STORAGE, message, retryable=retryable, stage=stage
         )
+
+
+class PermissionDeniedError(AegisError):
+    """Raised by the Execute_Tool gateway when authorization is refused.
+
+    Uphold of ``unauthorized_tool_exec = 0`` — the tool handler never runs.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__("unauthorized_tool", ErrorCategory.TOOL, message, stage="mcp.execute")
+
+
+class ArgumentValidationError(AegisError):
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            "invalid_arguments", ErrorCategory.VALIDATION, message, stage="mcp.execute"
+        )
+
+
+class BudgetExceededError(AegisError):
+    def __init__(self, message: str) -> None:
+        super().__init__("budget_exceeded", ErrorCategory.BUDGET, message, stage="mcp.execute")
+
+
+class ToolTimeoutError(AegisError):
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            "tool_timeout", ErrorCategory.TOOL, message, retryable=True, stage="mcp.execute"
+        )
+
+
+class ToolExecutionError(AegisError):
+    def __init__(self, message: str) -> None:
+        super().__init__("tool_failed", ErrorCategory.TOOL, message, stage="mcp.execute")
