@@ -20,6 +20,7 @@ class ErrorCategory(StrEnum):
     TOOL = "tool"
     LLM = "llm"
     STORAGE = "storage"
+    AUTH = "auth"
     INTERNAL = "internal"
 
 
@@ -75,6 +76,22 @@ class PermissionDeniedError(AegisError):
 
     def __init__(self, message: str) -> None:
         super().__init__("unauthorized_tool", ErrorCategory.TOOL, message, stage="mcp.execute")
+
+
+class AuthError(AegisError):
+    """Authentication/authorization failure (missing, invalid, or unauthorized key)."""
+
+    def __init__(self, message: str = "unauthorized") -> None:
+        super().__init__("unauthorized", ErrorCategory.AUTH, message, stage="api.auth")
+
+
+class QuotaExceededError(AegisError):
+    """Per-principal quota exhausted. Retryable once the window resets."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            "quota_exceeded", ErrorCategory.BUDGET, message, retryable=True, stage="api.auth"
+        )
 
 
 class CancelledError(AegisError):

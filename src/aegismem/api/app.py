@@ -21,11 +21,12 @@ inject a runtime/store in tests.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
 from aegismem.api.models import AgentRequest, AgentResponse, RunMode, RunStatus
@@ -40,6 +41,8 @@ from aegismem.retrieval.factory import build_embedder
 from aegismem.retrieval.reranker import OverlapReranker
 from aegismem.retrieval.router import JITRouter
 from aegismem.retrieval.vector import VectorIndex
+from aegismem.security.audit import AuditLog
+from aegismem.security.auth import ApiKeyStore, AuthContext, FixedWindowQuota, Principal
 
 # HTTP status per error category — the envelope drives the code, consistently.
 _STATUS: dict[ErrorCategory, int] = {
@@ -51,8 +54,11 @@ _STATUS: dict[ErrorCategory, int] = {
     ErrorCategory.TOOL: 502,
     ErrorCategory.LLM: 502,
     ErrorCategory.STORAGE: 503,
+    ErrorCategory.AUTH: 401,
     ErrorCategory.INTERNAL: 500,
 }
+
+_ANON = AuthContext(principal=Principal(principal_id="-", tenant="-"), key_fingerprint="-")
 
 
 @dataclass
@@ -94,13 +100,42 @@ def create_app(
     trace_store: JSONLTraceStore | None = None,
     provenance_store: object | None = None,
     max_in_flight: int = 32,
+    api_keys: ApiKeyStore | None = None,
+    quota: FixedWindowQuota | None = None,
+    audit: AuditLog | None = None,
 ) -> FastAPI:
     if runtime is None:
         runtime, trace_store = _default_runtime()
     registry = RunRegistry()
+    audit = audit or AuditLog()
     in_flight = {"n": 0}
     lock = asyncio.Lock()
     background: set[asyncio.Task[None]] = set()  # strong refs so tasks aren't GC'd
+
+    def authenticate(
+        x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    ) -> AuthContext:
+        # Auth is opt-in: with no key store the service runs open (dev/library mode).
+        if api_keys is None:
+            return _ANON
+        try:
+            principal = api_keys.authenticate(x_api_key)
+        except AegisError as exc:
+            audit.record("auth.fail", detail=exc.envelope.message, outcome="denied")
+            raise
+        if quota is not None:
+            try:
+                quota.allow(principal.principal_id)
+            except AegisError:
+                audit.record(
+                    "auth.quota",
+                    principal_id=principal.principal_id,
+                    tenant=principal.tenant,
+                    outcome="denied",
+                )
+                raise
+        fp = "-" if x_api_key is None else hashlib.sha256(x_api_key.encode()).hexdigest()[:8]
+        return AuthContext(principal=principal, key_fingerprint=fp)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -146,7 +181,16 @@ def create_app(
         return {"status": "ready", "in_flight": in_flight["n"]}
 
     @app.post("/runs")
-    async def create_run(req: AgentRequest) -> JSONResponse:
+    async def create_run(
+        req: AgentRequest,
+        auth: AuthContext = Depends(authenticate),  # noqa: B008
+    ) -> JSONResponse:
+        audit.record(
+            "run.create",
+            principal_id=auth.principal.principal_id,
+            tenant=auth.principal.tenant,
+            detail=req.request_id,
+        )
         # Idempotency: a repeated key returns the original run verbatim.
         if req.idempotency_key and req.idempotency_key in registry.by_idempotency:
             prior = registry.get(registry.by_idempotency[req.idempotency_key])
@@ -194,18 +238,33 @@ def create_app(
         return JSONResponse(status_code=200, content=resp.model_dump())
 
     @app.get("/runs/{run_id}")
-    async def get_run(run_id: str) -> JSONResponse:
+    async def get_run(
+        run_id: str,
+        auth: AuthContext = Depends(authenticate),  # noqa: B008
+    ) -> JSONResponse:
         rec = registry.get(run_id)
         return JSONResponse(status_code=200, content=rec.response.model_dump())
 
     @app.delete("/runs/{run_id}")
-    async def cancel_run(run_id: str) -> JSONResponse:
+    async def cancel_run(
+        run_id: str,
+        auth: AuthContext = Depends(authenticate),  # noqa: B008
+    ) -> JSONResponse:
         rec = registry.get(run_id)
         rec.cancelled = True
+        audit.record(
+            "run.cancel",
+            principal_id=auth.principal.principal_id,
+            tenant=auth.principal.tenant,
+            detail=run_id,
+        )
         return JSONResponse(status_code=200, content={"run_id": run_id, "cancelled": True})
 
     @app.get("/memory/{memory_id}/provenance")
-    async def provenance(memory_id: str) -> JSONResponse:
+    async def provenance(
+        memory_id: str,
+        auth: AuthContext = Depends(authenticate),  # noqa: B008
+    ) -> JSONResponse:
         if provenance_store is None or not hasattr(provenance_store, "provenance"):
             raise NotFoundError("no provenance store configured", stage="api")
         view = provenance_store.provenance(memory_id)
@@ -213,4 +272,5 @@ def create_app(
 
     app.state.runtime = runtime
     app.state.registry = registry
+    app.state.audit = audit
     return app

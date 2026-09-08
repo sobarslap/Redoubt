@@ -80,8 +80,21 @@ touched a live API. Wire real calls behind the existing seam.
 - Backpressure and concurrency limits; graceful shutdown flushing traces.
 - **Gate:** load-safe under concurrent requests (no shared-state races); contract tests for sync/async/idempotency/cancellation; OpenAPI schema published.
 
-## Phase P4 — AuthN/Z, secrets, tenancy
+## Phase P4 — AuthN/Z, secrets, tenancy ✅ done
 **~4–6 days.** Nobody unauthenticated touches the service; secrets never live in code.
+
+> **Landed:** an `ApiKeyStore` (keys held as SHA-256 hashes, constant-time compare)
+> resolving each key to a `Principal{principal_id, tenant}`; a `FixedWindowQuota`
+> per principal; both wired into the service as an opt-in auth dependency —
+> unauthenticated → typed 401, over-quota → typed 429, and the service still runs
+> open (dev/library mode) when no key store is configured. `TenantScopedMemoryStore`
+> enforces cross-tenant isolation at the store boundary: a tenant can never get,
+> list, mutate, link, or even confirm the existence of another tenant's memory
+> (cross-tenant access raises `NotFoundError`, so existence never leaks) — proven
+> adversarially. An `AuditLog` records privileged actions (run.create, auth.fail,
+> auth.quota, run.cancel). Provider secrets come only from the environment; a test
+> and a CI **gitleaks** step keep secret material out of config and history.
+> *Remaining: OIDC (beyond API keys) and a durable audit sink — deployment-specific.*
 
 - API-key or OIDC auth on the service; per-caller rate limiting and quotas.
 - Secrets via env/secret-manager (never in `models.yaml`); provider keys injected at runtime.
