@@ -95,7 +95,8 @@ Design and guarantees live in [`docs/`](docs/):
 [OBSERVABILITY](docs/OBSERVABILITY.md) ·
 [EVALUATION](docs/EVALUATION.md) ·
 [PERFORMANCE](docs/PERFORMANCE.md) ·
-[BUILD_PLAN](docs/BUILD_PLAN.md)
+[BUILD_PLAN](docs/BUILD_PLAN.md) ·
+[PRODUCTION_PLAN](docs/PRODUCTION_PLAN.md)
 
 ## Status
 
