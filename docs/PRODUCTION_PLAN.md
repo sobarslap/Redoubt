@@ -60,8 +60,19 @@ touched a live API. Wire real calls behind the existing seam.
 - Index build/rebuild jobs (the derived accelerators) with a documented rebuild path.
 - **Gate:** the full unit/integration/adversarial/eval suites pass against the new backend unchanged; a parity test asserts identical retrieval results (within tolerance) between SQLite and pgvector on the golden corpus.
 
-## Phase P3 — The service: FastAPI async runtime
+## Phase P3 — The service: FastAPI async runtime ✅ done
 **~4–6 days.** Turn the library + CLI into a networked service honoring the runtime contract.
+
+> **Landed:** `aegismem.api.app.create_app()` — a FastAPI service exposing
+> `POST /runs` (sync + async), `GET /runs/{run_id}`, `DELETE /runs/{run_id}`
+> (cooperative cancel), `GET /memory/{id}/provenance`, `/healthz`, `/readyz`, and a
+> published OpenAPI schema. The blocking `AgentRuntime.handle` runs in a worker
+> thread (`asyncio.to_thread`) so the event loop stays responsive; a bounded
+> in-flight counter returns a typed 503 for backpressure; a repeated
+> `idempotency_key` replays the original run; cancellation is enforced at each
+> stage boundary in the runtime (`cancel_check`); and every error path returns the
+> typed `ErrorEnvelope` mapped to an HTTP status. *Remaining for deploy: uvicorn
+> entrypoint + container (folded into P8).*
 
 - FastAPI app: `POST /runs` (sync + async modes), `GET /runs/{run_id}`, `/memory/{id}/provenance`, `/healthz`, `/readyz`.
 - Async lifecycle, per-stage deadlines, cooperative cancellation at stage boundaries, `idempotency_key` dedupe.

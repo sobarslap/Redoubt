@@ -77,6 +77,13 @@ class PermissionDeniedError(AegisError):
         super().__init__("unauthorized_tool", ErrorCategory.TOOL, message, stage="mcp.execute")
 
 
+class CancelledError(AegisError):
+    """Raised at a stage boundary when a run has been cooperatively cancelled."""
+
+    def __init__(self, message: str = "run cancelled", *, stage: str | None = None) -> None:
+        super().__init__("cancelled", ErrorCategory.INTERNAL, message, stage=stage)
+
+
 class GuardrailError(AegisError):
     """Raised when the security boundary refuses input, a memory write, a tool
     result, or an output.

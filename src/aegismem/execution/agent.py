@@ -17,10 +17,11 @@ compose into one runtime rather than a pile of modules.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from aegismem.api.models import AgentRequest, AgentResponse, Citation, RunStatus, Timings, Usage
-from aegismem.errors import AegisError, PermissionDeniedError
+from aegismem.errors import AegisError, CancelledError, PermissionDeniedError
 from aegismem.execution.llm import CostGuard, LLMClient
 from aegismem.guardrails import SecurityBoundary
 from aegismem.guardrails.trust import Segment
@@ -92,9 +93,17 @@ class AgentRuntime:
                 transcript += "\n" + line
         return "", steps  # unreachable; the loop returns inside
 
-    def handle(self, request: AgentRequest) -> AgentResponse:
+    def handle(
+        self, request: AgentRequest, *, cancel_check: Callable[[], bool] | None = None
+    ) -> AgentResponse:
+        def _ck(stage: str) -> None:
+            # Cooperative cancellation, checked at each stage boundary.
+            if cancel_check is not None and cancel_check():
+                raise CancelledError(stage=stage)
+
         with self.tracer.run(request) as run:
             try:
+                _ck("guardrails")
                 # 1. Guardrails — resource limits + injection/PII scan on input.
                 with run.span("guardrails") as sp:
                     decision = self.boundary.inspect_input(request.input, trust=TrustLevel.USER)
@@ -104,6 +113,7 @@ class AgentRuntime:
                         pii=decision.pii_kinds,
                     )
 
+                _ck("retrieval")
                 # 2. Retrieval — threshold-gated; EMPTY MEMORY when nothing clears.
                 with run.span("retrieval") as sp:
                     res = self.router.retrieve(request.input, documents=self.documents)
@@ -122,6 +132,7 @@ class AgentRuntime:
                         for r in res.results
                     ]
 
+                _ck("execution")
                 # 3. Execution — reason over labeled, fenced context, with a
                 #    bounded reason↔tool loop when tools are available. Cost is
                 #    enforced per run by the CostGuard.
