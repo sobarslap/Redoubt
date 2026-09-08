@@ -30,5 +30,7 @@ jobs:
         run: uv run python -m evals.run
       - name: End-to-end (golden dataset) tests
         run: uv run pytest tests/e2e
-      # Later phases append: perf benchmark. A dropped faithfulness/task-completion
-      # score, a risen attack-success-rate, or a blown P95/token budget fails the pipeline.
+      - name: Performance benchmark (proves the baseline→AegisMem deltas)
+        run: uv run python -m benchmarks.run --scales 10,1000,100000,1000000
+      # A dropped faithfulness/task-completion score, a risen attack-success-rate, or a
+      # blown P95/token budget fails the pipeline.
