@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Sync (core + dev)
+        run: uv sync --group dev
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Lint
+        run: uv run ruff check .
+      - name: Type check
+        run: uv run mypy
+      - name: Unit + integration tests
+        run: uv run pytest tests/unit tests/integration
+      # Later phases append: security tests -> adversarial -> eval dataset -> perf benchmark.
+      # A dropped faithfulness/task-completion score, a risen attack-success-rate, or a
+      # blown P95/token budget fails the pipeline.

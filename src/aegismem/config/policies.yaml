@@ -1,0 +1,33 @@
+# Deterministic policy layer. The LLM assists; these thresholds decide.
+
+# Conflict resolution: map (verdict, confidence) -> state-machine transition.
+conflict_resolution:
+  commit_threshold: 0.85      # >= commits the transition
+  review_threshold: 0.60      # [review, commit) -> HUMAN_REVIEW queue; < review -> REJECT
+  # Invariant: never mutate memory directly on "LLM said conflict".
+
+# Retrieval relevance: if nothing clears the threshold, return EMPTY MEMORY.
+retrieval:
+  relevance_threshold: 0.35
+  top_k: 3
+  rerank_top_n: 20
+
+# Trust levels (highest privilege first). Everything at/below MEMORY is untrusted data.
+trust_levels:
+  - SYSTEM
+  - DEVELOPER
+  - USER
+  - MEMORY
+  - TOOL_RESULT
+  - RAG_CONTENT
+
+# Failure/recovery policy per component (see docs/THREAT_MODEL.md and plan §8).
+failure_policy:
+  observability: continue          # fire-and-forget, local buffer
+  memory_retrieval: degrade        # no-memory mode, flagged in response
+  tool_timeout: bounded_retry
+  security_classifier: fail_closed
+  llm_request: retry_then_fallback
+  reranker: fallback_hybrid_score
+  compaction: preserve_previous
+  sqlite_locked: retry_backoff

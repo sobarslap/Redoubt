@@ -1,0 +1,80 @@
+[project]
+name = "aegismem"
+version = "0.0.0"
+description = "A framework-free, production-grade agent runtime in pure Python: lifecycle-managed memory, hybrid retrieval, verified compaction, progressive MCP tool discovery, a trust-boundary security model, deterministic replay, and a reproducible benchmark suite."
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+license = { text = "MIT" }
+authors = [{ name = "Zubairul Islam Mahi" }]
+
+# Core runtime deps only. Heavy/optional subsystems live in dependency-groups
+# so a clean checkout installs fast and CI can layer capabilities per phase.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+aegismem = "aegismem.cli:main"
+
+[dependency-groups]
+# Retrieval / ML stack — pulled in from Phase 3 onward.
+retrieval = [
+    "rank-bm25>=0.2.2",
+    "sentence-transformers>=3.0",
+    "sqlite-vec>=0.1.6",
+]
+# Token accounting fallback (provider APIs preferred where available).
+tokens = ["tiktoken>=0.8"]
+# LLM providers — provider-agnostic client, installed as needed.
+llm = [
+    "google-genai>=0.3",
+    "anthropic>=0.40",
+]
+# Observability + evaluation.
+observability = ["langfuse>=2.0"]
+evaluation = ["deepeval>=1.0"]
+# Plotting for the benchmark suite.
+bench = ["matplotlib>=3.9", "pandas>=2.2"]
+# Dev tooling — always installed in CI.
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "hypothesis>=6.112",
+    "httpx>=0.27",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "types-pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aegismem"]
+
+# ----------------------------------------------------------------------------
+# Tooling
+# ----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src/aegismem"]
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra"

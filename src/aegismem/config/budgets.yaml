@@ -1,0 +1,21 @@
+# Context Budget Allocator — configurable, benchmarked percentages (not a hardcoded 80% line).
+# Percentages of the model's usable context window. Must sum to <= 100.
+context_window:
+  system: 0.15
+  state: 0.10
+  memory: 0.15
+  tools: 0.15
+  conversation: 0.20
+  reserve: 0.25
+
+# Token watchdog: trigger a compaction run at the high watermark (fraction of window used).
+compaction:
+  high_watermark: 0.75
+  keep_recent_turns: 2
+
+# Per-run hard budgets (deterministic ceilings enforced by the runtime).
+run:
+  max_tool_calls: 12
+  max_tool_wall_seconds: 30
+  max_tool_result_chars: 8000
+  max_retrieval_candidates: 50
