@@ -77,6 +77,18 @@ class PermissionDeniedError(AegisError):
         super().__init__("unauthorized_tool", ErrorCategory.TOOL, message, stage="mcp.execute")
 
 
+class GuardrailError(AegisError):
+    """Raised when the security boundary refuses input, a memory write, a tool
+    result, or an output.
+
+    Fail-closed: when a guardrail cannot decide (internal error, unavailable
+    classifier), it raises this rather than allowing the content through.
+    """
+
+    def __init__(self, message: str, *, stage: str = "guardrails") -> None:
+        super().__init__("guardrail_blocked", ErrorCategory.GUARDRAIL, message, stage=stage)
+
+
 class ArgumentValidationError(AegisError):
     def __init__(self, message: str) -> None:
         super().__init__(

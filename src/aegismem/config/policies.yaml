@@ -21,6 +21,23 @@ trust_levels:
   - TOOL_RESULT
   - RAG_CONTENT
 
+# Security boundary (Phase 6). Deterministic-first; the classifier is
+# defense-in-depth, never the sole gate. All thresholds are measured, not vibes.
+security:
+  # Prompt-injection scanner. score in [0,1]; >= block_threshold => refuse to
+  # treat the segment as anything but data. Untrusted segments are additionally
+  # fenced structurally regardless of score.
+  injection_block_threshold: 0.5
+  # Resource limits (context-overflow / oversized-input defense).
+  max_input_chars: 200000
+  max_memory_content_chars: 20000
+  max_tool_result_chars: 32000
+  # Memory-write trust ceiling: content whose source is untrusted can never be
+  # written at SYSTEM/DEVELOPER trust, and injection-bearing untrusted writes are
+  # routed to review rather than committed as fact. Upholds memory_corruption = 0.
+  untrusted_write_max_trust: user
+  fail_closed: true
+
 # Failure/recovery policy per component (see docs/THREAT_MODEL.md and plan §8).
 failure_policy:
   observability: continue          # fire-and-forget, local buffer

@@ -31,6 +31,7 @@ uv.lock
 *.sqlite3
 traces/
 benchmarks/results/
+benchmarks/*/results/
 .aegismem/
 
 # OS / editors
