@@ -39,3 +39,6 @@ benchmarks/*/results/
 Thumbs.db
 .idea/
 .vscode/
+
+# graphify knowledge-graph artifacts (local tooling output)
+graphify-out/
