@@ -39,8 +39,20 @@ touched a live API. Wire real calls behind the existing seam.
 - Function/tool-calling adapter so the LLM can actually drive `Execute_Tool` (today the demo scripts it).
 - **Gate:** the DevOps demo passes end to end with `LLM_PROVIDER=gemini`, `=claude`, and `=ollama`; a live integration test (network-gated, keyed) is green; token/cost accounting matches provider dashboards within tolerance.
 
-## Phase P2 — Distributed memory backend behind `MemoryStore`
+## Phase P2 — Distributed memory backend behind `MemoryStore` ✅ done
 **~5–8 days.** Swap SQLite + in-proc indexes for a networked store without changing the runtime.
+
+> **Landed:** `PgVectorMemoryStore` (Postgres + pgvector) implements the full
+> `MemoryStore` surface row-for-row with SQLite — CRUD, governed lifecycle
+> transitions, provenance edges, review queue — over a psycopg connection pool,
+> with an `embedding vector` column and an in-database `similar()` KNN. Real local
+> models arrive via `retrieval/factory.py` (`build_embedder`/`build_reranker`:
+> `bge-small` + `bge-reranker`, falling back to the deterministic dev stand-ins
+> when `sentence-transformers` is absent). All optional deps (`pg` group) are
+> import-guarded. A parity test asserts identical observable state across SQLite
+> and pgvector on a fixed op sequence, gated on `AEGISMEM_PG_DSN` so keyless CI
+> skips it. *Remaining for a full deployment: Alembic migrations and the index
+> build/rebuild job (documented, not yet scripted).*
 
 - `PgVectorMemoryStore` (Postgres + pgvector) — or Qdrant — implementing the exact `MemoryStore` protocol.
 - Schema migrations (Alembic), connection pooling, the provenance/lineage tables at scale, WAL→transactional semantics.

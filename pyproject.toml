@@ -29,6 +29,12 @@ retrieval = [
 ]
 # Token accounting fallback (provider APIs preferred where available).
 tokens = ["tiktoken>=0.8"]
+# Production memory backend — Postgres + pgvector (Production Phase P2).
+pg = [
+    "psycopg[binary]>=3.2",
+    "psycopg-pool>=3.2",
+    "pgvector>=0.3",
+]
 # LLM providers — provider-agnostic client, installed as needed.
 llm = [
     "google-genai>=0.3",
@@ -77,7 +83,7 @@ plugins = ["pydantic.mypy"]
 # Optional dependencies pulled in only by their phase's dependency-group; the
 # source guards each import, so a missing stub at type-check time is expected.
 [[tool.mypy.overrides]]
-module = ["tiktoken"]
+module = ["tiktoken", "sentence_transformers", "psycopg_pool", "pgvector", "pgvector.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
