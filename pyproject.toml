@@ -74,6 +74,12 @@ strict = true
 files = ["src/aegismem"]
 plugins = ["pydantic.mypy"]
 
+# Optional dependencies pulled in only by their phase's dependency-group; the
+# source guards each import, so a missing stub at type-check time is expected.
+[[tool.mypy.overrides]]
+module = ["tiktoken"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
