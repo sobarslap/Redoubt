@@ -73,6 +73,21 @@ uv run python -m benchmarks.security.run
 Per-family coverage and the CSV are written to `benchmarks/security/results/`. The gate lives in
 `tests/adversarial/test_red_team.py`; a rise in attack-success-rate fails CI.
 
+## End-to-end red-team (Production P6)
+
+Phase 6 scored the injection *scanner* in isolation. Production P6 scores the
+**whole runtime**: attacks are seeded into untrusted content and a fully-compliant
+"gullible" model — one that emits whatever tool call the injected text asks for
+and parrots any secret it sees — drives the run
+(`tests/adversarial/test_redteam_e2e.py`). The measured end-to-end
+attack-success-rate is **0** regardless, because the defense is *structural*: the
+Execute_Tool gateway refuses the unauthorized call and the output filter scrubs
+the secret no matter how thoroughly the model was fooled. A live-model variant is
+network+key gated for a real deployment. An optional ML classifier
+(`guardrails.classifier`, `deberta-v3-prompt-injection`, `guard-ml` group) layers
+on as defense-in-depth via `CombinedScanner`. CI adds a dependency CVE scan
+(`pip-audit`) and an SBOM (CycloneDX).
+
 ## Configuration
 
 All thresholds are in `src/aegismem/config/policies.yaml` under `security:` — block threshold,

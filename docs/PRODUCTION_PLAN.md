@@ -120,8 +120,20 @@ touched a live API. Wire real calls behind the existing seam.
 - Cost-per-run at scale with the live LLM; tune budgets.
 - **Gate:** `docs/PERFORMANCE.md` gains a *measured-at-scale* section replacing the extrapolation; P95 and cost stay within stated budgets; the regression benchmark runs in CI against a scaled fixture.
 
-## Phase P6 — Live security audit & red-team (optional, "full" track)
+## Phase P6 — Live security audit & red-team (optional, "full" track) ✅ done
 **~3–5 days.** The Phase-6 red-team scored the deterministic scanner; now score the *live LLM path*.
+
+> **Landed:** an **end-to-end** red-team (`tests/adversarial/test_redteam_e2e.py`)
+> that drives the full runtime with a fully-compliant "gullible" model — one that
+> obeys any injection — across named single- and multi-turn attacks
+> (tool-hijack, exfiltration, fake-system, ActorAttack, Many-Shot, memory-poison).
+> Measured end-to-end attack-success-rate is **0**: the gateway refuses the
+> unauthorized call and the output filter scrubs the secret regardless of model
+> compliance — proof the defense is structural. A live-model variant is
+> network+key gated. Optional ML defense-in-depth via
+> `guardrails.classifier.CombinedScanner` (`deberta-v3-prompt-injection`,
+> `guard-ml` group). CI gains `pip-audit` (CVE) + CycloneDX SBOM. *Remaining: run
+> the live-model variant against a real provider and record the number.*
 
 - Run the AI-Infra-Guard attack suite against the real model end to end (not just the classifier): direct/indirect injection, ActorAttack/PAIR/GOAT multi-turn, memory poisoning, exfiltration.
 - Measure real attack-success-rate through the full boundary + live model; fix gaps; add the optional HF PI classifier (`deberta-v3-prompt-injection`) as defense-in-depth.
