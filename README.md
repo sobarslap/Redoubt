@@ -102,5 +102,13 @@ Design and guarantees live in [`docs/`](docs/):
 
 Runtime complete through the 10-phase [build plan](docs/BUILD_PLAN.md): core →
 memory semantics → retrieval → context → MCP discovery → security → observability
-→ evaluation → benchmarks → packaging. Single-node dev/demo tier; the swap path to
-a distributed backend is documented in [PERFORMANCE](docs/PERFORMANCE.md).
+→ evaluation → benchmarks → packaging.
+
+The [production-hardening track](docs/PRODUCTION_PLAN.md) (P1–P8) is code-complete:
+real LLM providers behind the `LLMClient` seam, a Postgres+pgvector backend behind
+`MemoryStore`, a FastAPI async service (sync/async runs, idempotency, cancellation,
+backpressure), API-key auth + per-tenant isolation + audit, a scale/latency
+harness, an end-to-end red-team, Prometheus metrics + PII-redacted Langfuse export,
+and a Dockerized deploy pipeline gated on the CI suite. Everything runs keyless and
+serviceless in CI (live provider / pgvector / load paths are gated); standing up the
+real infrastructure and secrets is the deployment step.
