@@ -140,8 +140,17 @@ touched a live API. Wire real calls behind the existing seam.
 - Dependency/CVE scanning, SBOM, threat-model review against the deployed topology.
 - **Gate:** live attack-success-rate at/near 0 with a measured false-positive rate; `docs/SECURITY.md` gains a live-results section; no high-severity CVEs.
 
-## Phase P7 — Observability & ops
+## Phase P7 — Observability & ops ✅ done
 **~3–5 days.** From local JSONL traces to a running observability stack.
+
+> **Landed:** the service exposes Prometheus metrics at `/metrics` (runs, failures,
+> run-latency summary) that move with real traffic; `ops/alerts.yml` turns the
+> CI eval/security/latency gates into live alerts. Traces fan out to a
+> self-hosted Langfuse (`ops/docker-compose.langfuse.yml`) through a
+> `RedactingSink` that scrubs secrets/PII before export, while the local JSONL
+> store stays exact for replay — a service run reconstructs by `run_id` end to end.
+> The fan-out is a no-op when Langfuse isn't configured. *Remaining: stand up the
+> Langfuse/Prometheus stack and wire Alertmanager — deployment infra.*
 
 - Self-hosted Langfuse (Docker) as the `TraceSink` fanout target; retention + PII-safe trace redaction.
 - Metrics (Prometheus) + dashboards + alerting on the eval/security/latency/cost gates (a risen attack-success-rate pages someone).

@@ -27,13 +27,14 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from fastapi import Depends, FastAPI, Header, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from aegismem.api.models import AgentRequest, AgentResponse, RunMode, RunStatus
 from aegismem.errors import AegisError, ErrorCategory, ErrorEnvelope, NotFoundError
 from aegismem.execution.agent import AgentRuntime
 from aegismem.execution.factory import build_client
 from aegismem.guardrails import SecurityBoundary
+from aegismem.observability.metrics import MetricsRegistry
 from aegismem.observability.trace_store import JSONLTraceStore
 from aegismem.observability.tracer import Tracer
 from aegismem.retrieval.bm25 import BM25Index
@@ -84,11 +85,19 @@ class RunRegistry:
 
 def _default_runtime() -> tuple[AgentRuntime, JSONLTraceStore]:
     store = JSONLTraceStore("traces/service.jsonl")
+    # Fan out to a hosted Langfuse when configured; the exported copy is PII-redacted,
+    # the local JSONL store stays exact for replay. No-op when Langfuse is absent.
+    from aegismem.observability.langfuse_exporter import LangfuseExporter
+    from aegismem.observability.redact import RedactingSink
+    from aegismem.observability.trace_store import FanoutSink
+
+    exporter = LangfuseExporter()
+    sink: object = FanoutSink([store, RedactingSink(exporter)]) if exporter.available else store
     router = JITRouter(BM25Index(), VectorIndex(build_embedder()), OverlapReranker(), top_k=3)
     runtime = AgentRuntime(
         llm=build_client("workhorse"),
         router=router,
-        tracer=Tracer(store),
+        tracer=Tracer(sink),  # type: ignore[arg-type]
         boundary=SecurityBoundary(),
     )
     return runtime, store
@@ -103,11 +112,13 @@ def create_app(
     api_keys: ApiKeyStore | None = None,
     quota: FixedWindowQuota | None = None,
     audit: AuditLog | None = None,
+    metrics: MetricsRegistry | None = None,
 ) -> FastAPI:
     if runtime is None:
         runtime, trace_store = _default_runtime()
     registry = RunRegistry()
     audit = audit or AuditLog()
+    metrics = metrics or MetricsRegistry()
     in_flight = {"n": 0}
     lock = asyncio.Lock()
     background: set[asyncio.Task[None]] = set()  # strong refs so tasks aren't GC'd
@@ -167,7 +178,12 @@ def create_app(
         async with lock:
             in_flight["n"] += 1
         try:
-            return await asyncio.to_thread(runtime.handle, req, cancel_check=cancel_check)
+            resp = await asyncio.to_thread(runtime.handle, req, cancel_check=cancel_check)
+            metrics.inc("aegismem_runs_total")
+            if resp.status == RunStatus.FAILED:
+                metrics.inc("aegismem_runs_failed_total")
+            metrics.observe("aegismem_run_latency_ms", resp.timings.total_ms)
+            return resp
         finally:
             async with lock:
                 in_flight["n"] -= 1
@@ -179,6 +195,11 @@ def create_app(
     @app.get("/readyz")
     async def readyz() -> dict[str, object]:
         return {"status": "ready", "in_flight": in_flight["n"]}
+
+    @app.get("/metrics")
+    async def prometheus_metrics() -> PlainTextResponse:
+        metrics.counters.setdefault("aegismem_runs_total", 0.0)
+        return PlainTextResponse(metrics.render())
 
     @app.post("/runs")
     async def create_run(
