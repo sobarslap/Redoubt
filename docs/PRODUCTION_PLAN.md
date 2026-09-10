@@ -157,8 +157,19 @@ touched a live API. Wire real calls behind the existing seam.
 - Deterministic replay wired to the hosted store; `aegismem replay` works against production runs.
 - **Gate:** a production run appears as a Langfuse waterfall and replays by `run_id`; alerts fire on injected gate breaches in staging.
 
-## Phase P8 — Deploy, CI/CD, release
+## Phase P8 — Deploy, CI/CD, release ✅ done
 **~3–5 days.** One command ships it; regressions block the ship.
+
+> **Landed:** a multi-stage `Dockerfile` (uv build → slim non-root runtime, image
+> healthcheck, `aegismem serve` entrypoint) with a `.dockerignore`; a full-stack
+> `ops/docker-compose.yml` (service + pgvector, keys injected at runtime). A
+> `deploy` workflow gated on the `ci` workflow succeeding: build+push
+> `ghcr.io/<repo>:<sha>` → deploy staging → `ops/smoke.py` → promote to prod
+> behind a manual `production` environment approval — so a dropped
+> eval/security/latency gate blocks the image, and a failed smoke blocks
+> promotion. A `serve` CLI runs uvicorn; `docs/RUNBOOK.md` covers migrations,
+> SHA-tag rollback, and alert response. *Remaining: point the workflow's
+> deploy/promote steps at your actual platform + wire Alembic revisions.*
 
 - Containerize (multi-stage Docker), IaC for the service + Postgres/Qdrant + Langfuse, staging + prod environments.
 - CI/CD extends the existing pipeline: format → lint → type → unit → integration → security → adversarial → **eval** → **perf** → build image → deploy staging → smoke → promote. A dropped eval/security/latency/cost gate blocks deploy.

@@ -28,7 +28,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     replay_p.add_argument("--json", action="store_true", help="emit the reconstruction as JSON")
 
+    serve_p = sub.add_parser("serve", help="Run the FastAPI service with uvicorn")
+    serve_p.add_argument("--host", default="0.0.0.0")
+    serve_p.add_argument("--port", type=int, default=8000)
+
     args = parser.parse_args(argv)
+
+    if args.command == "serve":
+        return _serve(args.host, args.port)
 
     if args.command == "replay":
         return _replay(args.run_id, args.trace_path, as_json=args.json)
@@ -47,6 +54,13 @@ def main(argv: list[str] | None = None) -> int:
 
     # Default / "version": keep it simple.
     print(f"aegismem {__version__}")
+    return 0
+
+
+def _serve(host: str, port: int) -> int:
+    import uvicorn
+
+    uvicorn.run("aegismem.api.app:create_app", host=host, port=port, factory=True)
     return 0
 
 
