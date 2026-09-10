@@ -43,8 +43,8 @@ llm = [
 # Observability + evaluation.
 observability = ["langfuse>=2.0"]
 evaluation = ["deepeval>=1.0"]
-# Plotting for the benchmark suite.
-bench = ["matplotlib>=3.9", "pandas>=2.2"]
+# Plotting + load testing for the benchmark suite.
+bench = ["matplotlib>=3.9", "pandas>=2.2", "locust>=2.31"]
 # Dev tooling — always installed in CI.
 dev = [
     "pytest>=8.3",

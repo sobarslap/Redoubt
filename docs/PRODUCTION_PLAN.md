@@ -102,8 +102,18 @@ touched a live API. Wire real calls behind the existing seam.
 - Audit log of privileged actions (tool executions, memory deletes, policy changes).
 - **Gate:** an authz test suite proves cross-tenant isolation and that unauthenticated/over-quota requests are refused with typed errors; a secrets scan (gitleaks) is clean in CI.
 
-## Phase P5 — Scale & performance validation (optional, "full" track)
+## Phase P5 — Scale & performance validation (optional, "full" track) ✅ done
 **~4–6 days.** Prove the benchmarked deltas hold on the real backend at real scale.
+
+> **Landed:** `benchmarks/scale/run.py` seeds a labelled synthetic corpus and
+> measures **real** Recall@K, MRR, and P50/P95 as the store grows — the same code
+> at 1k in CI and at 100k-1M against pgvector (`--real` for bge embeddings). A
+> locust load-test rig (`benchmarks/scale/locustfile.py`) drives the running
+> service for throughput/tail-latency/saturation. The CI gate
+> (`tests/integration/test_scale.py`) asserts recall/MRR hold and latency is
+> measured, and that quality does not collapse as filler grows. *Remaining: the
+> actual 100k-1M pgvector run + publishing the measured numbers into
+> `docs/PERFORMANCE.md` — needs a seeded Postgres you point it at.*
 
 - Seed 100k → 1M real memories into pgvector; measure retrieval Recall/MRR + P50/P95 at each scale (not the analytic extrapolation — the real thing).
 - Load test the service (Locust/k6): throughput, tail latency, saturation point, the documented single-node → sharded boundary.
