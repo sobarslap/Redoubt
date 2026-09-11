@@ -135,6 +135,27 @@ def test_backpressure_returns_typed_503(tmp_path) -> None:
     assert env["category"] == "budget" and env["retryable"] is True
 
 
+def test_caller_cannot_access_another_callers_run(tmp_path) -> None:
+    # A run belongs to the principal that created it; another authenticated caller
+    # can neither read nor cancel it (nor confirm it exists) -> 404.
+    from aegismem.api.app import create_app
+    from aegismem.security.auth import ApiKeyStore, Principal
+
+    keys = ApiKeyStore.from_mapping(
+        {"key-a": Principal("alice", "tenant-a"), "key-b": Principal("bob", "tenant-b")}
+    )
+    c = TestClient(create_app(_runtime(tmp_path), api_keys=keys))
+    made = c.post(
+        "/runs", json={"session_id": "s", "input": "checkout?"}, headers={"X-API-Key": "key-a"}
+    ).json()
+    run_id = made["run_id"]
+    # Owner can read it.
+    assert c.get(f"/runs/{run_id}", headers={"X-API-Key": "key-a"}).status_code == 200
+    # A different caller cannot read or cancel it.
+    assert c.get(f"/runs/{run_id}", headers={"X-API-Key": "key-b"}).status_code == 404
+    assert c.delete(f"/runs/{run_id}", headers={"X-API-Key": "key-b"}).status_code == 404
+
+
 def test_unknown_run_returns_typed_404(tmp_path) -> None:
     r = _client(tmp_path).get("/runs/run_does_not_exist")
     assert r.status_code == 404

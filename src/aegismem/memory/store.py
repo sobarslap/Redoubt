@@ -13,6 +13,7 @@ from __future__ import annotations
 import builtins
 import json
 import sqlite3
+import threading
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -118,8 +119,12 @@ class SQLiteMemoryStore:
 
     def __init__(self, db_path: str | Path = "aegismem.db") -> None:
         self._path = str(db_path)
-        # check_same_thread=False keeps the async API layer simple; access is
-        # serialized by SQLite's own locking plus WAL.
+        # A single connection is shared across the threadpool-backed API layer
+        # (check_same_thread=False). SQLite's own locking serializes *connections*,
+        # not concurrent use of one connection object, so this RLock serializes every
+        # operation on it — making each multi-statement write (UPDATE + audit INSERT
+        # + commit) atomic and preventing another thread's commit from splitting it.
+        self._lock = threading.RLock()
         self._conn = sqlite3.connect(self._path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -176,21 +181,25 @@ class SQLiteMemoryStore:
 
     def create(self, data: MemoryCreate) -> MemoryRecord:
         record = MemoryRecord(**data.model_dump())
-        try:
-            self._conn.execute(
-                """INSERT INTO memories
-                   (id, type, content, status, confidence, source, trust,
-                    created_at, updated_at, version, supersedes, derived_from)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                self._record_params(record),
-            )
-            self._conn.commit()
-        except sqlite3.Error as exc:  # pragma: no cover - defensive
-            raise StorageError(f"failed to create memory: {exc}", stage="memory.create") from exc
+        with self._lock:
+            try:
+                self._conn.execute(
+                    """INSERT INTO memories
+                       (id, type, content, status, confidence, source, trust,
+                        created_at, updated_at, version, supersedes, derived_from)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    self._record_params(record),
+                )
+                self._conn.commit()
+            except sqlite3.Error as exc:  # pragma: no cover - defensive
+                raise StorageError(
+                    f"failed to create memory: {exc}", stage="memory.create"
+                ) from exc
         return record
 
     def get(self, memory_id: str) -> MemoryRecord:
-        row = self._conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
         if row is None:
             raise NotFoundError(f"memory {memory_id!r} not found", stage="memory.get")
         return self._row_to_record(row)
@@ -207,34 +216,38 @@ class SQLiteMemoryStore:
         updated = record.model_copy(update=patch)
         updated.version = record.version + 1
         updated.touch()
-        try:
-            self._conn.execute(
-                """UPDATE memories SET
-                    type=?, content=?, status=?, confidence=?, source=?, trust=?,
-                    created_at=?, updated_at=?, version=?, supersedes=?, derived_from=?
-                   WHERE id=?""",
-                (*self._record_params(updated)[1:], updated.id),
-            )
-            self._conn.commit()
-        except sqlite3.Error as exc:  # pragma: no cover - defensive
-            raise StorageError(f"failed to update memory: {exc}", stage="memory.update") from exc
+        with self._lock:
+            try:
+                self._conn.execute(
+                    """UPDATE memories SET
+                        type=?, content=?, status=?, confidence=?, source=?, trust=?,
+                        created_at=?, updated_at=?, version=?, supersedes=?, derived_from=?
+                       WHERE id=?""",
+                    (*self._record_params(updated)[1:], updated.id),
+                )
+                self._conn.commit()
+            except sqlite3.Error as exc:  # pragma: no cover - defensive
+                raise StorageError(
+                    f"failed to update memory: {exc}", stage="memory.update"
+                ) from exc
         return updated
 
     def delete(self, memory_id: str, *, hard: bool = False) -> None:
         """Soft-delete by default (status -> DELETED); ``hard`` removes the row."""
-        record = self.get(memory_id)  # raises NotFoundError if absent
-        if hard:
-            self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+        with self._lock:
+            record = self.get(memory_id)  # raises NotFoundError if absent
+            if hard:
+                self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+                self._conn.commit()
+                return
+            record.status = MemoryStatus.DELETED
+            record.version += 1
+            record.touch()
+            self._conn.execute(
+                "UPDATE memories SET status=?, version=?, updated_at=? WHERE id=?",
+                (record.status.value, record.version, record.updated_at.isoformat(), memory_id),
+            )
             self._conn.commit()
-            return
-        record.status = MemoryStatus.DELETED
-        record.version += 1
-        record.touch()
-        self._conn.execute(
-            "UPDATE memories SET status=?, version=?, updated_at=? WHERE id=?",
-            (record.status.value, record.version, record.updated_at.isoformat(), memory_id),
-        )
-        self._conn.commit()
 
     def list(
         self,
@@ -254,10 +267,11 @@ class SQLiteMemoryStore:
             params.append(status.value)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.extend([limit, offset])
-        rows = self._conn.execute(
-            f"SELECT * FROM memories {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            params,
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT * FROM memories {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                params,
+            ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
     # -- lifecycle (Phase 2) ---------------------------------------------------
@@ -276,44 +290,54 @@ class SQLiteMemoryStore:
         Refuses illegal edges via :func:`assert_transition` — the governed path
         that upholds ``memory_corruption = 0``.
         """
-        record = self.get(memory_id)
-        assert_transition(record.status, to_status)
-        from_status = record.status
-        prev_version = record.version
-        record.status = to_status
-        record.version += 1
-        record.touch()
-        try:
-            self._conn.execute(
-                "UPDATE memories SET status=?, version=?, updated_at=? WHERE id=?",
-                (record.status.value, record.version, record.updated_at.isoformat(), memory_id),
-            )
-            self._conn.execute(
-                """INSERT INTO transitions
-                   (memory_id, from_status, to_status, reason, source, trigger, prev_version, at)
-                   VALUES (?,?,?,?,?,?,?,?)""",
-                (
-                    memory_id,
-                    from_status.value,
-                    to_status.value,
-                    reason,
-                    source,
-                    trigger,
-                    prev_version,
-                    _utcnow_iso(),
-                ),
-            )
-            self._conn.commit()
-        except sqlite3.Error as exc:  # pragma: no cover - defensive
-            raise StorageError(
-                f"failed to transition memory: {exc}", stage="memory.transition"
-            ) from exc
+        # Hold the lock across read-check-write so the whole transition (and its
+        # audit row) commits atomically and can't interleave with another thread.
+        with self._lock:
+            record = self.get(memory_id)
+            assert_transition(record.status, to_status)
+            from_status = record.status
+            prev_version = record.version
+            record.status = to_status
+            record.version += 1
+            record.touch()
+            try:
+                self._conn.execute(
+                    "UPDATE memories SET status=?, version=?, updated_at=? WHERE id=?",
+                    (
+                        record.status.value,
+                        record.version,
+                        record.updated_at.isoformat(),
+                        memory_id,
+                    ),
+                )
+                self._conn.execute(
+                    """INSERT INTO transitions
+                       (memory_id, from_status, to_status, reason, source, trigger,
+                        prev_version, at)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (
+                        memory_id,
+                        from_status.value,
+                        to_status.value,
+                        reason,
+                        source,
+                        trigger,
+                        prev_version,
+                        _utcnow_iso(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.Error as exc:  # pragma: no cover - defensive
+                raise StorageError(
+                    f"failed to transition memory: {exc}", stage="memory.transition"
+                ) from exc
         return record
 
     def history(self, memory_id: str) -> builtins.list[MemoryTransition]:
-        rows = self._conn.execute(
-            "SELECT * FROM transitions WHERE memory_id = ? ORDER BY id ASC", (memory_id,)
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM transitions WHERE memory_id = ? ORDER BY id ASC", (memory_id,)
+            ).fetchall()
         return [
             MemoryTransition(
                 memory_id=r["memory_id"],
@@ -333,22 +357,24 @@ class SQLiteMemoryStore:
     def add_edge(self, src_id: str, dst_id: str, kind: str) -> None:
         """Insert a provenance edge ``src -> dst`` (idempotent)."""
         EdgeKind(kind)  # validate vocabulary
-        self._conn.execute(
-            """INSERT OR IGNORE INTO provenance_edges (src_id, dst_id, kind, at)
-               VALUES (?,?,?,?)""",
-            (src_id, dst_id, kind, _utcnow_iso()),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT OR IGNORE INTO provenance_edges (src_id, dst_id, kind, at)
+                   VALUES (?,?,?,?)""",
+                (src_id, dst_id, kind, _utcnow_iso()),
+            )
+            self._conn.commit()
 
     def provenance(self, memory_id: str) -> ProvenanceView:
         """Return the provenance neighbourhood of ``memory_id``."""
-        self.get(memory_id)  # raises NotFoundError if absent
-        out = self._conn.execute(
-            "SELECT dst_id, kind FROM provenance_edges WHERE src_id = ?", (memory_id,)
-        ).fetchall()
-        inc = self._conn.execute(
-            "SELECT src_id, kind FROM provenance_edges WHERE dst_id = ?", (memory_id,)
-        ).fetchall()
+        with self._lock:
+            self.get(memory_id)  # raises NotFoundError if absent
+            out = self._conn.execute(
+                "SELECT dst_id, kind FROM provenance_edges WHERE src_id = ?", (memory_id,)
+            ).fetchall()
+            inc = self._conn.execute(
+                "SELECT src_id, kind FROM provenance_edges WHERE dst_id = ?", (memory_id,)
+            ).fetchall()
         view = ProvenanceView(memory_id=memory_id)
         for r in out:
             if r["kind"] == EdgeKind.SUPERSEDES:
@@ -370,26 +396,28 @@ class SQLiteMemoryStore:
         self, candidate: MemoryCreate, existing_id: str, verdict: ConflictVerdict
     ) -> str:
         review_id = f"rev_{uuid.uuid4().hex[:16]}"
-        self._conn.execute(
-            """INSERT INTO review_queue
-               (id, candidate_json, existing_id, relation, confidence, rationale, status, at)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (
-                review_id,
-                candidate.model_dump_json(),
-                existing_id,
-                verdict.relation.value,
-                verdict.confidence,
-                verdict.rationale,
-                "pending",
-                _utcnow_iso(),
-            ),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO review_queue
+                   (id, candidate_json, existing_id, relation, confidence, rationale, status, at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    review_id,
+                    candidate.model_dump_json(),
+                    existing_id,
+                    verdict.relation.value,
+                    verdict.confidence,
+                    verdict.rationale,
+                    "pending",
+                    _utcnow_iso(),
+                ),
+            )
+            self._conn.commit()
         return review_id
 
     def review_queue(self, status: str = "pending") -> builtins.list[dict[str, object]]:
-        rows = self._conn.execute(
-            "SELECT * FROM review_queue WHERE status = ? ORDER BY at ASC", (status,)
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM review_queue WHERE status = ? ORDER BY at ASC", (status,)
+            ).fetchall()
         return [dict(r) for r in rows]

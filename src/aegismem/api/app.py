@@ -71,6 +71,7 @@ _ANON = AuthContext(principal=Principal(principal_id="-", tenant="-"), key_finge
 @dataclass
 class _RunRecord:
     response: AgentResponse
+    owner: str = "-"  # principal_id that created the run
     cancelled: bool = False
 
 
@@ -85,6 +86,15 @@ class RunRegistry:
     def get(self, run_id: str) -> _RunRecord:
         rec = self.runs.get(run_id)
         if rec is None:
+            raise NotFoundError(f"run {run_id!r} not found", stage="api")
+        return rec
+
+    def get_owned(self, run_id: str, owner: str) -> _RunRecord:
+        """Fetch a run only if it belongs to ``owner``; otherwise behave as if it
+        does not exist (a caller can never read/act on — or even confirm the
+        existence of — another caller's run)."""
+        rec = self.runs.get(run_id)
+        if rec is None or rec.owner != owner:
             raise NotFoundError(f"run {run_id!r} not found", stage="api")
         return rec
 
@@ -223,15 +233,18 @@ def create_app(
         req: AgentRequest,
         auth: AuthContext = Depends(authenticate),  # noqa: B008
     ) -> JSONResponse:
+        owner = auth.principal.principal_id
         audit.record(
             "run.create",
-            principal_id=auth.principal.principal_id,
+            principal_id=owner,
             tenant=auth.principal.tenant,
             detail=req.request_id,
         )
-        # Idempotency: a repeated key returns the original run verbatim.
-        if req.idempotency_key and req.idempotency_key in registry.by_idempotency:
-            prior = registry.get(registry.by_idempotency[req.idempotency_key])
+        # Idempotency is scoped per principal so one caller's key can never return
+        # another caller's run.
+        idem = f"{owner}:{req.idempotency_key}" if req.idempotency_key else None
+        if idem and idem in registry.by_idempotency:
+            prior = registry.get(registry.by_idempotency[idem])
             return JSONResponse(status_code=200, content=prior.response.model_dump())
 
         if in_flight["n"] >= max_in_flight:
@@ -251,9 +264,9 @@ def create_app(
                 run_id=f"run_pending_{req.request_id}",
                 status=RunStatus.QUEUED,
             )
-            registry.runs[placeholder.run_id] = _RunRecord(response=placeholder)
-            if req.idempotency_key:
-                registry.by_idempotency[req.idempotency_key] = placeholder.run_id
+            registry.runs[placeholder.run_id] = _RunRecord(response=placeholder, owner=owner)
+            if idem:
+                registry.by_idempotency[idem] = placeholder.run_id
 
             async def _bg() -> None:
                 rec = registry.runs[placeholder.run_id]
@@ -273,9 +286,9 @@ def create_app(
 
         # Sync: run to completion and return the response.
         resp = await _execute(req.request_id, req)
-        registry.runs[resp.run_id] = _RunRecord(response=resp)
-        if req.idempotency_key:
-            registry.by_idempotency[req.idempotency_key] = resp.run_id
+        registry.runs[resp.run_id] = _RunRecord(response=resp, owner=owner)
+        if idem:
+            registry.by_idempotency[idem] = resp.run_id
         return JSONResponse(status_code=200, content=resp.model_dump())
 
     @app.get("/runs/{run_id}")
@@ -283,7 +296,7 @@ def create_app(
         run_id: str,
         auth: AuthContext = Depends(authenticate),  # noqa: B008
     ) -> JSONResponse:
-        rec = registry.get(run_id)
+        rec = registry.get_owned(run_id, auth.principal.principal_id)
         return JSONResponse(status_code=200, content=rec.response.model_dump())
 
     @app.delete("/runs/{run_id}")
@@ -291,7 +304,7 @@ def create_app(
         run_id: str,
         auth: AuthContext = Depends(authenticate),  # noqa: B008
     ) -> JSONResponse:
-        rec = registry.get(run_id)
+        rec = registry.get_owned(run_id, auth.principal.principal_id)
         rec.cancelled = True
         audit.record(
             "run.cancel",
