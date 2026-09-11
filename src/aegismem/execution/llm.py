@@ -19,6 +19,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
+from aegismem.context.tokens import HeuristicTokenCounter
 from aegismem.errors import AegisError, ErrorCategory
 
 
@@ -56,8 +57,13 @@ class LLMClient(Protocol):
     def complete(self, prompt: str, *, system: str = "", max_tokens: int = 512) -> LLMResponse: ...
 
 
+_TOKEN_COUNTER = HeuristicTokenCounter()
+
+
 def _est_tokens(text: str) -> int:
-    return max(1, len(text) // 4)
+    # Reuse the runtime's single token heuristic so cost/usage estimates never
+    # drift from the context-budget accounting.
+    return max(1, _TOKEN_COUNTER.count(text))
 
 
 @dataclass

@@ -30,6 +30,17 @@ class RedactingSink:
         self.inner.emit(self._redact(record))
 
     @staticmethod
+    def _redact_value(value: object) -> object:
+        """Recursively scrub strings inside str / list / dict values."""
+        if isinstance(value, str):
+            return pii.redact(value)
+        if isinstance(value, list):
+            return [RedactingSink._redact_value(v) for v in value]
+        if isinstance(value, dict):
+            return {k: RedactingSink._redact_value(v) for k, v in value.items()}
+        return value
+
+    @staticmethod
     def _redact(record: BaseModel) -> BaseModel:
         if isinstance(record, RunRecord):
             return record.model_copy(
@@ -39,11 +50,13 @@ class RedactingSink:
                 }
             )
         if isinstance(record, SpanRecord):
-            attrs = {
-                k: (pii.redact(v) if isinstance(v, str) else v)
-                for k, v in record.attributes.items()
-            }
+            # Scrub every attribute value, including lists/dicts (not just top-level str).
+            attrs = {k: RedactingSink._redact_value(v) for k, v in record.attributes.items()}
             return record.model_copy(update={"attributes": attrs})
         if isinstance(record, CallRecord):
-            return record.model_copy(update={"response": pii.redact(record.response)})
+            # Tool-call args (request) can carry secrets too — scrub both sides.
+            request = {k: RedactingSink._redact_value(v) for k, v in record.request.items()}
+            return record.model_copy(
+                update={"request": request, "response": pii.redact(record.response)}
+            )
         return record

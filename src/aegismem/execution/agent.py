@@ -161,7 +161,13 @@ class AgentRuntime:
                     verdict = self.boundary.filter_output(llm_out, secrets=self.secrets)
                     sp.set(leaked=verdict.leaked, reasons=verdict.reasons)
 
-                usage = Usage(input_tokens=len(context) // 4, output_tokens=len(verdict.text) // 4)
+                # Report the usage the CostGuard actually accumulated across the
+                # whole reason<->tool loop, not just the final prompt+answer.
+                usage = Usage(
+                    input_tokens=guard.usage.input_tokens,
+                    output_tokens=guard.usage.output_tokens,
+                    tool_calls=tool_steps,
+                )
                 run.set_output(verdict.text, usage=usage)
                 return AgentResponse(
                     request_id=request.request_id,

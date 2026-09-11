@@ -261,6 +261,9 @@ def create_app(
                     rec.response = placeholder.model_copy(update={"status": RunStatus.FAILED})
                     return
                 resp = await _execute(placeholder.run_id, req)
+                # The engine mints its own internal run_id; rebind it to the id the
+                # client was handed (and polls) so the response body and GET agree.
+                resp = resp.model_copy(update={"run_id": placeholder.run_id})
                 registry.runs[placeholder.run_id].response = resp
 
             task = asyncio.create_task(_bg())

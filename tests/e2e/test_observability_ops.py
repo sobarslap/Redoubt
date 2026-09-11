@@ -91,12 +91,37 @@ def test_redacting_sink_scrubs_secrets_before_export() -> None:
             attributes={"note": "token AKIA1234567890ABCD00", "n": 5},
         )
     )
+    # Tool-call args (request dict) and list-valued span attrs are scrubbed too.
+    from aegismem.observability.events import CallKind, CallRecord
+
+    sink.emit(
+        SpanRecord(
+            run_id="r",
+            trace_id="t",
+            name="retrieval",
+            attributes={"ids": ["mem_a", "sk-ABCD1234ABCD1234ABCD"]},
+        )
+    )
+    sink.emit(
+        CallRecord(
+            run_id="r",
+            trace_id="t",
+            call_kind=CallKind.TOOL,
+            key="http",
+            request={"header": "Authorization: Bearer sk-ABCD1234ABCD1234ABCD"},
+            response="ok",
+        )
+    )
     run = captured[0]
     span = captured[1]
+    list_span = captured[2]
+    call = captured[3]
     assert "sk-ABCD1234ABCD1234ABCD" not in run.input
     assert "ops@example.com" not in run.outcome
     assert "AKIA1234567890ABCD00" not in span.attributes["note"]
     assert span.attributes["n"] == 5  # non-string attrs untouched
+    assert "sk-ABCD1234ABCD1234ABCD" not in "".join(list_span.attributes["ids"])
+    assert "sk-ABCD1234ABCD1234ABCD" not in call.request["header"]
 
 
 # -- replay of a service run -------------------------------------------------
