@@ -150,10 +150,13 @@ touched a live API. Wire real calls behind the existing seam.
 
 > **Landed:** the service exposes Prometheus metrics at `/metrics` (runs, failures,
 > run-latency summary) that move with real traffic; `ops/alerts.yml` turns the
-> CI eval/security/latency gates into live alerts. Traces fan out to a
+> run-failure-rate, P95-latency, and security (guardrail-block / unauthorized-tool)
+> signals into live alerts. Traces fan out to a
 > self-hosted Langfuse (`ops/docker-compose.langfuse.yml`) through a
 > `RedactingSink` that scrubs secrets/PII before export, while the local JSONL
-> store stays exact for replay — a service run reconstructs by `run_id` end to end.
+> store stays exact for replay — a run with fully persisted traces reconstructs by
+> `run_id` end to end (tracing is fail-open, so a run whose trace writes were
+> dropped is not replayable).
 > The fan-out is a no-op when Langfuse isn't configured. *Remaining: stand up the
 > Langfuse/Prometheus stack and wire Alertmanager — deployment infra.*
 

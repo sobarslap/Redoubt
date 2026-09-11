@@ -1,7 +1,10 @@
 # Prometheus alert rules for AegisMem (Production Phase P7).
-# The CI eval/security/latency/cost gates become live alerts: a regression that
-# would fail the pipeline pages on-call when it happens in production. Scrape the
-# service's /metrics endpoint; load these rules into Prometheus/Alertmanager.
+# The runtime signals that map to exported metrics — run-failure-rate, P95 latency,
+# and security (guardrail blocks / unauthorized tool attempts) — become live alerts:
+# a regression that would fail the pipeline pages on-call when it happens in
+# production. Scrape the service's /metrics endpoint; load these rules into
+# Prometheus/Alertmanager. (The eval/faithfulness gate runs in CI only; it has no
+# runtime metric to alert on.)
 groups:
   - name: aegismem.runtime
     rules:

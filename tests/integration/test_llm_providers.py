@@ -39,7 +39,9 @@ def test_factory_falls_back_to_mock_without_keys(monkeypatch) -> None:
 
 
 def test_factory_strict_raises_without_key(monkeypatch) -> None:
-    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+    # Clear every provider credential so an inherited key can't change routing and
+    # let the strict build unexpectedly succeed.
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(var, raising=False)
     with pytest.raises(ProviderConfigError):
         build_client("workhorse", strict=True)

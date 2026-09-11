@@ -77,7 +77,8 @@ def main() -> None:
     mrr = mean_reciprocal_rank(rankings, relevants)
     latencies.sort()
     p50 = statistics.median(latencies)
-    p95 = latencies[max(0, int(0.95 * len(latencies)) - 1)]
+    # Nearest-rank P95 (ceil), not floor — floor underreports for n not a multiple of 20.
+    p95 = latencies[max(0, (95 * len(latencies) + 99) // 100 - 1)]
 
     print(f"corpus={len(CORPUS)} queries={len(QUERIES)} k={k}")
     print(f"Recall@{k}    {recall:.3f}")

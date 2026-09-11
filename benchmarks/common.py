@@ -53,7 +53,9 @@ class TokenComparison:
 
 def token_comparison(scale: int, *, top_k: int = RETRIEVAL_TOP_K) -> TokenComparison:
     baseline = round(scale * MEAN_TOKENS_PER_MEMORY)
-    aegismem = round(SYSTEM_PROMPT_TOKENS + top_k * MEAN_TOKENS_PER_MEMORY)
+    # Retrieval can return at most `scale` memories, so a small store (scale < top_k,
+    # e.g. --scales 1) caps the retrieved count and can't overcount aegismem tokens.
+    aegismem = round(SYSTEM_PROMPT_TOKENS + min(scale, top_k) * MEAN_TOKENS_PER_MEMORY)
     reduction = 1.0 - (aegismem / baseline) if baseline else 0.0
     return TokenComparison(scale, baseline, aegismem, round(reduction, 6))
 
@@ -61,7 +63,10 @@ def token_comparison(scale: int, *, top_k: int = RETRIEVAL_TOP_K) -> TokenCompar
 def p50_p95(latencies: list[float]) -> tuple[float, float]:
     ordered = sorted(latencies)
     p50 = statistics.median(ordered)
-    p95 = ordered[max(0, int(0.95 * len(ordered)) - 1)]
+    # Nearest-rank P95: ceil(0.95*n) as a 1-based rank, then 0-index. Flooring
+    # (int(0.95*n)) underreports whenever n is not a multiple of 20 (e.g. n=21
+    # would pick rank 19 instead of 20).
+    p95 = ordered[max(0, (95 * len(ordered) + 99) // 100 - 1)]
     return p50, p95
 
 

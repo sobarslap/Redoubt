@@ -1,8 +1,11 @@
 # OBSERVABILITY & REPLAY (Phase 7)
 
-Observability here means **reproducibility, not just logging**. Every run records
+Observability here means **reproducibility, not just logging**. A run records
 enough to reconstruct *why* it behaved as it did — and to re-execute it
-deterministically — via `src/aegismem/observability/`.
+deterministically — via `src/aegismem/observability/`. This holds only when the
+run's records fully persist: tracing is **fail-open** (a broken sink drops records
+rather than failing the run), so a run whose trace writes were dropped is not
+deterministically replayable.
 
 ## Source of truth: the local trace store
 

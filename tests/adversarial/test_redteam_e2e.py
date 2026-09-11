@@ -141,8 +141,10 @@ def test_ml_classifier_available(tmp_path) -> None:  # pragma: no cover - heavy 
 
 
 @pytest.mark.skipif(
-    not (os.environ.get("GEMINI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")),
-    reason="no LLM key; live red-team skipped (keyless CI)",
+    # The test builds the "workhorse" role, which resolves to Gemini (models.yaml),
+    # so it needs a Gemini key specifically — an Anthropic key is not sufficient.
+    not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")),
+    reason="no Gemini key; live red-team skipped (keyless CI)",
 )
 def test_live_model_red_team(tmp_path) -> None:  # pragma: no cover - network
     from aegismem.execution.factory import build_client

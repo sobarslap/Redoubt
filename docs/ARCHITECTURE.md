@@ -33,21 +33,24 @@ one envelope `{code, category, message, retryable, stage}` — never a raw stack
 | `mcp` | progressive tool discovery + the guarded Execute_Tool gateway | discovery ≠ authorization; unauthorized exec = 0 |
 | `guardrails` | trust boundary (fenced untrusted data), injection scanner, PII, sanitization | attack-success-rate → 0, fail-closed |
 | `execution` | agent loop + provider-agnostic `LLMClient` (Gemini/Claude/Ollama/Mock) with retry+fallback | provider-swappable, keyless demo path |
-| `observability` | append-only trace store + deterministic replay; optional Langfuse | tracing fail-open; any run replays from `run_id` |
+| `observability` | append-only trace store + deterministic replay; optional Langfuse | tracing fail-open; a run with fully persisted traces replays from `run_id` |
 | `config` | budgets, policies, model routing as YAML | thresholds are configuration, not literals |
 
 ## Storage — the source of truth
 
 ```
-SQLite (WAL, authoritative)         Vector index (derived)      BM25 index (derived)
+SQLite (WAL, authoritative memory)  Vector index (derived)      BM25 index (derived)
 ├── memory rows + metadata          └── embedding → memory_id   └── postings → memory_id
 ├── version history / lineage
-├── status / provenance graph
-└── run / trace / replay records
+└── status / provenance graph
+
+JSONL trace store (authoritative observability, separate from the memory DB)
+└── run / trace / replay records   (fail-open: a dropped write is not replayable)
 ```
 
-The vector and lexical indexes are **rebuildable accelerators**; SQLite owns the
-truth. `MemoryStore`, `LLMClient`, and `TraceSink` are `Protocol`s — the
+The vector and lexical indexes are **rebuildable accelerators**; the memory SQLite
+owns the truth for memory, and the append-only JSONL trace store owns run/trace
+records. They are distinct stores — traces are not written into the memory DB. `MemoryStore`, `LLMClient`, and `TraceSink` are `Protocol`s — the
 documented swap points to a distributed backend (pgvector / Qdrant), a real LLM
 provider, or a hosted trace sink, with no change to the runtime.
 
