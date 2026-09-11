@@ -20,8 +20,6 @@ venv/
 .coverage
 htmlcov/
 
-# uv
-uv.lock
 
 # AegisMem runtime artifacts
 *.db
