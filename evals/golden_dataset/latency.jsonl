@@ -1,0 +1,3 @@
+{"id": "lat_retrieval_100", "category": "latency", "description": "retrieval P95 under budget", "params": {"op": "retrieval"}, "expect": {"max_p95_ms": 100.0}}
+{"id": "lat_retrieval_200", "category": "latency", "description": "retrieval P95 under a looser budget", "params": {"op": "retrieval"}, "expect": {"max_p95_ms": 200.0}}
+{"id": "lat_retrieval_500", "category": "latency", "description": "retrieval P95 under a generous CI budget", "params": {"op": "retrieval"}, "expect": {"max_p95_ms": 500.0}}
