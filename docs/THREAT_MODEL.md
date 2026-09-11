@@ -16,7 +16,7 @@ tool outputs, and (partially) user input.
 | # | Attack (AI-Infra-Guard) | Defense | Proof |
 |---|---|---|---|
 | 1 | Direct instruction injection ("ignore previous instructions") | injection scanner + immutable rules | `test_every_named_attack_is_blocked` |
-| 2 | Indirect injection via poisoned log line | structural fence + scanner; treated as data | red-team corpus `indirect_injection_log` |
+| 2 | Indirect injection via poisoned log line | scanner + Execute_Tool authorization + output filter enforce safety; structural fence is defense-in-depth (mitigation, not a guaranteed boundary — a gullible model may still act on fenced text) | red-team corpus `indirect_injection_log`; `test_injection_cannot_trigger_unauthorized_tool_exec` |
 | 3 | Fake system instruction / forged role turn | scanner (`fake_system`) + trust hierarchy | corpus `fake_*` |
 | 4 | Role hijack / ActorAttack persona | scanner (`role_hijack`) | corpus `role_*`, `actor_attack_*` |
 | 5 | Memory poisoning (persist a false fact) | write sanitizer → quarantine to `CANDIDATE` | `test_injected_untrusted_write_never_becomes_active_fact` |

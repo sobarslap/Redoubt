@@ -30,13 +30,19 @@ RAG_CONTENT   }
    run on inbound content at the boundary.
 3. **Prompt hardening / scope** — the `IMMUTABLE_RULES` block plus **randomized-delimiter fences**
    around untrusted data. The nonce is unpredictable per assembly, so injected text cannot forge a
-   closing fence to "escape" into the instruction region.
+   closing fence to structurally "escape" the fenced region. This is a *mitigation*, not an enforced
+   boundary: a sufficiently gullible model can still be persuaded to act on fenced instructions
+   (see `GullibleAdversaryModel` in the red-team suite), so the fence reduces attack surface but does
+   not by itself guarantee the model ignores injected content.
 4. **Output validation / authorization** — the outbound leakage filter scrubs known secrets and PII;
-   tool authorization stays with the Execute_Tool gateway (Phase 5), never the model.
+   tool authorization stays with the Execute_Tool gateway (Phase 5), never the model. This is the
+   control that actually *enforces* safety: even a model fully taken in by an injection cannot run an
+   unauthorized tool or exfiltrate a secret, because authorization and output filtering sit outside it.
 5. **Monitoring** — every guardrail decision is a typed, loggable verdict (Phase 7 traces it).
 
-The structural layer is primary: even if the detector misses an attack, fenced content is still
-labeled data the model is immutably told not to obey. The detector is defense-in-depth.
+Enforcement lives in the scanner, the Execute_Tool authorization gateway, and the output filter —
+controls outside the model. The fences and immutable rules are defense-in-depth that shrink the
+attack surface; they are not relied on as the sole barrier against indirect injection.
 
 ## Injection detector
 

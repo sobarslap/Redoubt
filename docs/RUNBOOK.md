@@ -33,7 +33,11 @@ The derived vector/BM25 indexes are rebuildable from the source-of-truth rows.
 ## Rollback
 
 1. Re-point the platform to the previous known-good image tag `ghcr.io/<repo>:<prev-sha>`.
-2. If a migration shipped, apply `alembic downgrade -1` against the backup.
+2. If a migration shipped, reverse it on the **serving** database — take a fresh
+   backup first, confirm the migration is reversible, then `alembic downgrade -1`
+   against the live DSN. Never downgrade the backup: that leaves the serving
+   database on the new schema and destroys your clean recovery point. If the
+   migration is not safely reversible, restore the pre-deploy backup instead.
 3. Confirm recovery with `python -m ops.smoke <url>`.
 Images are immutable and versioned by commit SHA, so rollback is a tag swap.
 

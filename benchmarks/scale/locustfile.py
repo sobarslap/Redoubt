@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import random
+import urllib.parse
 
 try:
     from locust import HttpUser, between, task
@@ -43,7 +44,16 @@ class RunUser(HttpUser):  # type: ignore[misc,valid-type]
     wait_time = between(0.1, 1.0)
 
     def _headers(self) -> dict[str, str]:
-        return {"X-API-Key": _KEY} if _KEY else {}
+        # Only send the API key over a channel that won't leak it in cleartext:
+        # HTTPS, or an explicit loopback http target. Refuse to attach it otherwise.
+        if not _KEY:
+            return {}
+        host = str(getattr(self, "host", "") or "")
+        parsed = urllib.parse.urlparse(host)
+        loopback = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        if parsed.scheme == "https" or (parsed.scheme == "http" and loopback):
+            return {"X-API-Key": _KEY}
+        raise ValueError(f"refusing to send X-API-Key to non-HTTPS, non-loopback host {host!r}")
 
     @task(4)
     def sync_run(self) -> None:
@@ -51,6 +61,9 @@ class RunUser(HttpUser):  # type: ignore[misc,valid-type]
             "/runs",
             json={"session_id": "load", "input": random.choice(_INPUTS)},
             headers=self._headers(),
+            # Don't follow redirects: requests keeps custom headers like X-API-Key
+            # across a cross-origin redirect, which would leak the credential.
+            allow_redirects=False,
         )
 
     @task(1)

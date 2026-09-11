@@ -114,6 +114,15 @@ def test_cancel_endpoint_marks_run_cancelled(tmp_path) -> None:
     r = c.post("/runs", json={"session_id": "s", "input": "checkout?", "mode": "async"})
     run_id = r.json()["run_id"]
     assert c.delete(f"/runs/{run_id}").json()["cancelled"] is True
+    # The accepted DELETE is not enough on its own — assert the safety property it
+    # buys: a cancelled run must never resolve to a successful completion with a
+    # grounded answer. Poll the run and confirm it never reports SUCCEEDED/output.
+    for _ in range(50):
+        body = c.get(f"/runs/{run_id}").json()
+        assert body["status"] != RunStatus.SUCCEEDED
+        assert not body.get("output")
+        if body["status"] == RunStatus.FAILED:
+            break
 
 
 def test_runtime_cancellation_at_stage_boundary(tmp_path) -> None:

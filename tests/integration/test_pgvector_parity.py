@@ -2,9 +2,10 @@
 
 The parity test runs an identical sequence of operations against both stores and
 asserts identical observable results (records, lifecycle history, provenance,
-review queue). It is gated on ``AEGISMEM_PG_DSN`` (or ``DATABASE_URL``): with no
-Postgres it skips, so keyless/serviceless CI stays green while a real deployment
-proves the swap is transparent.
+review queue). It is gated on ``AEGISMEM_TEST_PG_DSN`` — a *dedicated* test
+database, never production ``AEGISMEM_PG_DSN`` / ``DATABASE_URL``, because the test
+TRUNCATEs every table. With no DSN it skips, so keyless/serviceless CI stays green
+while a real deployment proves the swap is transparent.
 
 The un-gated tests cover what needs no database: the vector literal helper and the
 retrieval model factory's fallback behavior.
@@ -13,13 +14,16 @@ retrieval model factory's fallback behavior.
 from __future__ import annotations
 
 import os
+import urllib.parse
 
 import pytest
 
 from aegismem.memory.models import MemoryCreate, MemoryStatus, MemoryType, MemoryUpdate, TrustLevel
 from aegismem.memory.store import SQLiteMemoryStore
 
-_DSN = os.environ.get("AEGISMEM_PG_DSN") or os.environ.get("DATABASE_URL")
+# A *dedicated* test DSN only — never the production AEGISMEM_PG_DSN / DATABASE_URL,
+# because test_pgvector_parity_with_sqlite TRUNCATEs every table on the target.
+_DSN = os.environ.get("AEGISMEM_TEST_PG_DSN")
 
 
 # -- un-gated: no database needed --------------------------------------------
@@ -124,6 +128,15 @@ def test_pgvector_parity_with_sqlite() -> None:  # pragma: no cover - needs live
 
     with SQLiteMemoryStore(":memory:") as sqlite_store:
         sqlite_state = _exercise(sqlite_store)
+
+    # Refuse to run the destructive TRUNCATE against anything but an explicitly
+    # named test database, even if AEGISMEM_TEST_PG_DSN was misconfigured.
+    db_name = urllib.parse.urlparse(_DSN).path.lstrip("/")
+    if "test" not in db_name.lower():
+        pytest.fail(
+            f"refusing destructive parity test: database {db_name!r} is not a test "
+            "database (name must contain 'test')"
+        )
 
     pg = PgVectorMemoryStore(_DSN)
     try:
