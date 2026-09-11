@@ -24,7 +24,14 @@ class _Detector:
 
 
 _DETECTORS: tuple[_Detector, ...] = (
-    _Detector("private_key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
+    _Detector(
+        "private_key",
+        re.compile(
+            r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
+            r".*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
+            re.DOTALL,
+        ),
+    ),
     _Detector("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     _Detector("openai_key", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b")),
     _Detector("bearer_token", re.compile(r"\bBearer\s+[A-Za-z0-9._\-]{16,}\b")),

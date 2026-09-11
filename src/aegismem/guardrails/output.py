@@ -35,7 +35,9 @@ def filter_output(
     reasons: list[str] = []
     out = text
 
-    for secret in secrets:
+    # Redact longer secrets first: a shorter secret that is a prefix/substring of a
+    # longer one would otherwise be replaced first and leave part of the longer one.
+    for secret in sorted(secrets, key=len, reverse=True):
         if secret and secret in out:
             out = out.replace(secret, "[REDACTED:secret]")
             reasons.append("known_secret")

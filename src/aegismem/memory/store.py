@@ -210,7 +210,10 @@ class SQLiteMemoryStore:
         if not isinstance(changes, MemoryUpdate):
             raise TypeError("changes must be a MemoryUpdate")
         record = self.get(memory_id)
-        patch = changes.model_dump(exclude_unset=True)
+        # Drop explicit None values: every MemoryUpdate field is optional and None
+        # means "leave unchanged"; keeping it would null a required field (e.g.
+        # status -> None, then .value raises later) and corrupt the record.
+        patch = {k: v for k, v in changes.model_dump(exclude_unset=True).items() if v is not None}
         if not patch:
             return record
         updated = record.model_copy(update=patch)
@@ -235,19 +238,16 @@ class SQLiteMemoryStore:
     def delete(self, memory_id: str, *, hard: bool = False) -> None:
         """Soft-delete by default (status -> DELETED); ``hard`` removes the row."""
         with self._lock:
-            record = self.get(memory_id)  # raises NotFoundError if absent
+            self.get(memory_id)  # raises NotFoundError if absent
             if hard:
                 self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
                 self._conn.commit()
                 return
-            record.status = MemoryStatus.DELETED
-            record.version += 1
-            record.touch()
-            self._conn.execute(
-                "UPDATE memories SET status=?, version=?, updated_at=? WHERE id=?",
-                (record.status.value, record.version, record.updated_at.isoformat(), memory_id),
-            )
-            self._conn.commit()
+        # Soft delete goes through the governed transition so it obeys the lifecycle
+        # gate and writes an audit row (like every other status change).
+        self.transition(
+            memory_id, MemoryStatus.DELETED, reason="soft delete", source="store", trigger="delete"
+        )
 
     def list(
         self,

@@ -41,7 +41,11 @@ def verify_state(
             continue
         expected = source_truth.get(key)
         actual = state.critical_variables[key]
-        if expected is not None and actual != expected:
+        if expected is None:
+            # A declared critical key with no source-of-truth value can't be
+            # consistency-checked; fail rather than pass silently.
+            reasons.append(f"consistency: no source-of-truth value for critical variable '{key}'")
+        elif actual != expected:
             reasons.append(
                 f"consistency: critical variable '{key}' is '{actual}', "
                 f"contradicts source-of-truth '{expected}'"

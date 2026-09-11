@@ -30,7 +30,7 @@ from types import TracebackType
 from typing import TYPE_CHECKING
 
 from aegismem.api.models import Usage
-from aegismem.errors import AegisError, ErrorEnvelope
+from aegismem.errors import AegisError, ErrorCategory, ErrorEnvelope
 from aegismem.observability.events import (
     CallKind,
     CallRecord,
@@ -152,7 +152,28 @@ class RunTrace:
         if self._cache is not None and self._cache.has(call_kind, key):
             response = self._cache.get(call_kind, key)
             latency = 0.0
-            failed = False
+            failed = self._cache.failed(call_kind, key)
+            if failed:
+                # Reproduce the recorded failure instead of replaying it as success.
+                self._emit(
+                    CallRecord(
+                        run_id=self.run_id,
+                        trace_id=self.trace_id,
+                        call_kind=call_kind,
+                        seq=seq,
+                        key=key,
+                        request=request,
+                        response=response,
+                        latency_ms=0.0,
+                        failed=True,
+                    )
+                )
+                raise AegisError(
+                    "replay_failure",
+                    ErrorCategory.INTERNAL,
+                    f"replayed call {key!r} recorded a failure",
+                    stage="observability.replay",
+                )
         else:
             start = time.perf_counter()
             failed = False

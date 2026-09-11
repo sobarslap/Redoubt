@@ -229,7 +229,9 @@ class PgVectorMemoryStore:
         if not isinstance(changes, MemoryUpdate):
             raise TypeError("changes must be a MemoryUpdate")
         record = self.get(memory_id)
-        patch = changes.model_dump(exclude_unset=True)
+        # Drop explicit None values (optional field == "unchanged"); keeping one
+        # would null a required column and later raise on .value.
+        patch = {k: v for k, v in changes.model_dump(exclude_unset=True).items() if v is not None}
         if not patch:
             return record
         updated = record.model_copy(update=patch)
@@ -264,20 +266,16 @@ class PgVectorMemoryStore:
         return updated
 
     def delete(self, memory_id: str, *, hard: bool = False) -> None:
-        record = self.get(memory_id)
-        with self._pool.connection() as conn:
-            if hard:
+        self.get(memory_id)  # raises NotFoundError if absent
+        if hard:
+            with self._pool.connection() as conn:
                 conn.execute("DELETE FROM memories WHERE id = %s", (memory_id,))
                 conn.commit()
-                return
-            record.status = MemoryStatus.DELETED
-            record.version += 1
-            record.touch()
-            conn.execute(
-                "UPDATE memories SET status=%s, version=%s, updated_at=%s WHERE id=%s",
-                (record.status.value, record.version, record.updated_at, memory_id),
-            )
-            conn.commit()
+            return
+        # Soft delete goes through the governed transition (lifecycle gate + audit).
+        self.transition(
+            memory_id, MemoryStatus.DELETED, reason="soft delete", source="store", trigger="delete"
+        )
 
     def list(
         self,

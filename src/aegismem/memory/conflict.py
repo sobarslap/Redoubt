@@ -21,6 +21,7 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
+from aegismem.memory.lifecycle import LIVE_STATUSES
 from aegismem.memory.models import MemoryCreate, MemoryRecord, MemoryStatus
 
 
@@ -120,7 +121,9 @@ class ConflictResolver:
         self._review = review_threshold
 
     def ingest(self, candidate: MemoryCreate, existing: list[MemoryRecord]) -> ResolutionResult:
-        live = [e for e in existing if e.status in {MemoryStatus.ACTIVE, MemoryStatus.CANDIDATE}]
+        # Reuse the canonical live-status set so this never drifts from lifecycle.py
+        # (which also counts VALIDATING as live).
+        live = [e for e in existing if e.status in LIVE_STATUSES]
 
         # 1. Exact-duplicate short-circuit (deterministic, no classifier).
         norm = normalize(candidate.content)
@@ -195,7 +198,9 @@ class ConflictResolver:
     # -- actions ---------------------------------------------------------------
 
     def _commit_new(self, candidate: MemoryCreate, verdict: ConflictVerdict) -> ResolutionResult:
-        rec = self._store.create(candidate)
+        # Always create as CANDIDATE, then promote — a caller-supplied ACTIVE status
+        # would otherwise make the transition below an illegal ACTIVE -> ACTIVE edge.
+        rec = self._store.create(candidate.model_copy(update={"status": MemoryStatus.CANDIDATE}))
         rec = self._store.transition(
             rec.id,
             MemoryStatus.ACTIVE,
@@ -214,7 +219,11 @@ class ConflictResolver:
         # existing record, and only then activate the new one. Ordered this way, a
         # failure at any step never leaves two ACTIVE contradictory memories: the
         # worst case is a stray CANDIDATE, which is not active truth.
-        new = self._store.create(candidate.model_copy(update={"supersedes": existing.id}))
+        new = self._store.create(
+            candidate.model_copy(
+                update={"supersedes": existing.id, "status": MemoryStatus.CANDIDATE}
+            )
+        )
         self._store.transition(
             existing.id,
             MemoryStatus.SUPERSEDED,

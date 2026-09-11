@@ -42,6 +42,8 @@ def try_tiktoken_counter(encoding: str = "cl100k_base") -> TokenCounter | None:
 
     class _Tik:
         def count(self, text: str) -> int:
-            return len(enc.encode(text))
+            # Encode special-token strings (e.g. "<|endoftext|>") as ordinary text
+            # instead of raising — conversation content is untrusted input.
+            return len(enc.encode(text, disallowed_special=()))
 
     return _Tik()

@@ -28,18 +28,26 @@ class ReplayCache:
     """Serves recorded call responses by ``(kind, key)``. Built from a run's
     ``CallRecord``s; attach to ``Tracer.run(cache=...)`` for deterministic replay."""
 
-    def __init__(self, responses: dict[str, str]) -> None:
+    def __init__(self, responses: dict[str, str], failures: dict[str, bool] | None = None) -> None:
         self._responses = responses
+        self._failures = failures or {}
 
     @classmethod
     def from_trace(cls, trace: RunTrace) -> ReplayCache:
-        return cls({_cache_key(c.call_kind, c.key): c.response for c in trace.calls})
+        return cls(
+            {_cache_key(c.call_kind, c.key): c.response for c in trace.calls},
+            {_cache_key(c.call_kind, c.key): c.failed for c in trace.calls},
+        )
 
     def has(self, kind: CallKind, key: str) -> bool:
         return _cache_key(kind, key) in self._responses
 
     def get(self, kind: CallKind, key: str) -> str:
         return self._responses[_cache_key(kind, key)]
+
+    def failed(self, kind: CallKind, key: str) -> bool:
+        """Whether the recorded call originally failed (so replay reproduces it)."""
+        return self._failures.get(_cache_key(kind, key), False)
 
 
 class TimelineStep(BaseModel):

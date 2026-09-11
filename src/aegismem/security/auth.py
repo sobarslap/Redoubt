@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -72,20 +73,22 @@ class FixedWindowQuota:
     window_seconds: float = 60.0
     max_tracked: int = 100_000  # cap the principal map; sweep expired past this
     _counts: dict[str, tuple[float, int]] = field(default_factory=dict)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def allow(self, principal_id: str, *, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
-        # Lazily evict principals whose window has fully expired so the map can't
-        # grow without bound as callers rotate (a distributed deployment uses Redis).
-        if len(self._counts) > self.max_tracked:
-            self._counts = {
-                p: (s, c) for p, (s, c) in self._counts.items() if now - s < self.window_seconds
-            }
-        start, count = self._counts.get(principal_id, (now, 0))
-        if now - start >= self.window_seconds:
-            start, count = now, 0  # window rolled over
-        count += 1
-        self._counts[principal_id] = (start, count)
+        with self._lock:  # the read-modify-write below must be atomic under concurrency
+            # Lazily evict principals whose window has fully expired so the map can't
+            # grow without bound as callers rotate (a distributed deployment uses Redis).
+            if len(self._counts) > self.max_tracked:
+                self._counts = {
+                    p: (s, c) for p, (s, c) in self._counts.items() if now - s < self.window_seconds
+                }
+            start, count = self._counts.get(principal_id, (now, 0))
+            if now - start >= self.window_seconds:
+                start, count = now, 0  # window rolled over
+            count += 1
+            self._counts[principal_id] = (start, count)
         if count > self.max_requests:
             raise QuotaExceededError(
                 f"quota exceeded for {principal_id!r} "

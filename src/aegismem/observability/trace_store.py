@@ -69,8 +69,14 @@ class JSONLTraceStore:
         with self._path.open("r", encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
-                if line:
+                if not line:
+                    continue
+                try:
                     rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    # A truncated tail record (e.g. a crash mid-write) must not make
+                    # the whole trace unreadable — skip the malformed line.
+                    self.dropped += 1
         return rows
 
     def load(self, run_id: str) -> RunTrace:

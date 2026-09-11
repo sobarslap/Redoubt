@@ -10,15 +10,18 @@ on:
     types: [completed]
     branches: [main]
 
+# Least privilege at the top; each job widens only what it needs.
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build-and-stage:
     # Only build if CI passed.
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # only this job pushes to GHCR
     steps:
       # Build the EXACT commit that passed CI, not the branch head (which may have
       # advanced since the ci run that triggered this workflow).
@@ -52,6 +55,7 @@ jobs:
   promote:
     needs: build-and-stage
     runs-on: ubuntu-latest
+    permissions: {}  # promotion needs no repo token scopes
     environment: production  # requires manual approval via GitHub Environments
     steps:
       - name: Promote staging image to prod
