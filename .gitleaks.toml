@@ -1,0 +1,29 @@
+# gitleaks configuration for AegisMem.
+#
+# The repo contains deliberately secret-SHAPED strings that are NOT real
+# credentials: test fixtures that exercise the PII scanner and the red-team
+# suite, and worked examples in the docs. Real secrets never live in the repo —
+# provider keys come only from the environment, and the P4 secret-scan test
+# (tests/integration/test_auth_tenancy.py) verifies config files are clean.
+#
+# This config keeps the full default ruleset (so genuine leaks still fail CI) and
+# allowlists only the test/doc fixtures.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and documentation examples — fake, secret-shaped strings used to test detection, not real credentials."
+paths = [
+  '''tests/.*''',
+  '''docs/.*''',
+  # pii.py contains secret-detection REGEXES (e.g. the sk-/AKIA patterns), not secrets.
+  '''src/aegismem/guardrails/pii\.py''',
+  # benchmark/eval corpora reuse the same fixture strings.
+  '''tests/adversarial/corpus\.py''',
+]
+regexes = [
+  '''sk-PRODKEY0+[0-9]+''',
+  '''sk-ABCD1234ABCD1234ABCD''',
+  '''AKIA1234567890ABCD00''',
+]
