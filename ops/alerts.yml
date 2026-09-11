@@ -1,0 +1,38 @@
+# Prometheus alert rules for AegisMem (Production Phase P7).
+# The CI eval/security/latency/cost gates become live alerts: a regression that
+# would fail the pipeline pages on-call when it happens in production. Scrape the
+# service's /metrics endpoint; load these rules into Prometheus/Alertmanager.
+groups:
+  - name: aegismem.runtime
+    rules:
+      - alert: HighRunFailureRate
+        expr: rate(aegismem_runs_failed_total[5m]) / rate(aegismem_runs_total[5m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AegisMem run failure rate above 5% (5m)"
+
+      - alert: RunLatencyP95TooHigh
+        expr: aegismem_run_latency_ms{quantile="0.95"} > 5000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AegisMem run P95 latency above the 5s budget"
+
+      - alert: GuardrailBlockSpike
+        expr: increase(aegismem_guardrail_blocked_total[5m]) > 50
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Unusual spike in guardrail blocks — possible attack in progress"
+
+      - alert: UnauthorizedToolAttempts
+        expr: increase(aegismem_tool_refused_total[5m]) > 20
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Repeated unauthorized tool-execution attempts refused"
