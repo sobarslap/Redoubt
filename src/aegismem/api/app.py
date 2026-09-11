@@ -82,6 +82,15 @@ class RunRegistry:
 
     runs: dict[str, _RunRecord] = field(default_factory=dict)
     by_idempotency: dict[str, str] = field(default_factory=dict)
+    max_runs: int = 10_000  # bound in-process memory in a long-lived service
+
+    def add(self, run_id: str, record: _RunRecord) -> None:
+        self.runs[run_id] = record
+        # Evict the oldest completed runs (insertion order) so the map can't grow
+        # without bound; idempotency entries pointing at evicted runs simply miss.
+        while len(self.runs) > self.max_runs:
+            oldest, _ = next(iter(self.runs.items()))
+            del self.runs[oldest]
 
     def get(self, run_id: str) -> _RunRecord:
         rec = self.runs.get(run_id)
@@ -264,7 +273,7 @@ def create_app(
                 run_id=f"run_pending_{req.request_id}",
                 status=RunStatus.QUEUED,
             )
-            registry.runs[placeholder.run_id] = _RunRecord(response=placeholder, owner=owner)
+            registry.add(placeholder.run_id, _RunRecord(response=placeholder, owner=owner))
             if idem:
                 registry.by_idempotency[idem] = placeholder.run_id
 
@@ -286,7 +295,7 @@ def create_app(
 
         # Sync: run to completion and return the response.
         resp = await _execute(req.request_id, req)
-        registry.runs[resp.run_id] = _RunRecord(response=resp, owner=owner)
+        registry.add(resp.run_id, _RunRecord(response=resp, owner=owner))
         if idem:
             registry.by_idempotency[idem] = resp.run_id
         return JSONResponse(status_code=200, content=resp.model_dump())

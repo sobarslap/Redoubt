@@ -194,7 +194,7 @@ class PgVectorMemoryStore:
             with self._pool.connection() as conn:
                 conn.execute(
                     f"INSERT INTO memories ({self._COLS}, embedding) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector)",
                     (
                         record.id,
                         record.type.value,
@@ -241,7 +241,7 @@ class PgVectorMemoryStore:
                 conn.execute(
                     "UPDATE memories SET type=%s, content=%s, status=%s, confidence=%s, "
                     "source=%s, trust=%s, created_at=%s, updated_at=%s, version=%s, "
-                    "supersedes=%s, derived_from=%s, embedding=%s WHERE id=%s",
+                    "supersedes=%s, derived_from=%s, embedding=%s::vector WHERE id=%s",
                     (
                         updated.type.value,
                         updated.content,
@@ -456,7 +456,7 @@ class PgVectorMemoryStore:
         qv = _vec(self._embedder.embed(query))
         with self._pool.connection() as conn:
             rows = conn.execute(
-                "SELECT id, embedding <=> %s AS dist FROM memories "
+                "SELECT id, embedding <=> %s::vector AS dist FROM memories "
                 "WHERE embedding IS NOT NULL AND status = %s ORDER BY dist ASC LIMIT %s",
                 (qv, MemoryStatus.ACTIVE.value, k),
             ).fetchall()

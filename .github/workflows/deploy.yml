@@ -20,7 +20,11 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
+      # Build the EXACT commit that passed CI, not the branch head (which may have
+      # advanced since the ci run that triggered this workflow).
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
@@ -35,10 +39,10 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}:${{ github.event.workflow_run.head_sha }}
             ghcr.io/${{ github.repository }}:latest
       - name: Deploy to staging
-        run: echo "deploy ghcr.io/${{ github.repository }}:${{ github.sha }} to staging (wire to your platform)"
+        run: echo "deploy ghcr.io/${{ github.repository }}:${{ github.event.workflow_run.head_sha }} to staging (wire to your platform)"
       - name: Smoke test staging
         run: |
           # docker run the image, then:
@@ -51,4 +55,4 @@ jobs:
     environment: production  # requires manual approval via GitHub Environments
     steps:
       - name: Promote staging image to prod
-        run: echo "promote ghcr.io/${{ github.repository }}:${{ github.sha }} to prod"
+        run: echo "promote ghcr.io/${{ github.repository }}:${{ github.event.workflow_run.head_sha }} to prod"
