@@ -29,6 +29,17 @@ retrieval = [
 ]
 # Token accounting fallback (provider APIs preferred where available).
 tokens = ["tiktoken>=0.8"]
+# Optional ML prompt-injection classifier — defense-in-depth (Production Phase P6).
+guard-ml = ["transformers>=4.44", "torch>=2.2"]
+# OIDC/JWT bearer auth + schema migrations (Production Phase P4/P8).
+auth = ["pyjwt[crypto]>=2.9"]
+migrations = ["alembic>=1.13"]
+# Production memory backend — Postgres + pgvector (Production Phase P2).
+pg = [
+    "psycopg[binary]>=3.2",
+    "psycopg-pool>=3.2",
+    "pgvector>=0.3",
+]
 # LLM providers — provider-agnostic client, installed as needed.
 llm = [
     "google-genai>=0.3",
@@ -37,8 +48,8 @@ llm = [
 # Observability + evaluation.
 observability = ["langfuse>=2.0"]
 evaluation = ["deepeval>=1.0"]
-# Plotting for the benchmark suite.
-bench = ["matplotlib>=3.9", "pandas>=2.2"]
+# Plotting + load testing for the benchmark suite.
+bench = ["matplotlib>=3.9", "pandas>=2.2", "locust>=2.31"]
 # Dev tooling — always installed in CI.
 dev = [
     "pytest>=8.3",
@@ -73,6 +84,13 @@ python_version = "3.11"
 strict = true
 files = ["src/aegismem"]
 plugins = ["pydantic.mypy"]
+
+# Optional dependencies pulled in only by their phase's dependency-group; the
+# source guards each import, so a missing stub at type-check time is expected.
+[[tool.mypy.overrides]]
+module = ["tiktoken", "sentence_transformers", "psycopg_pool", "pgvector", "pgvector.*",
+    "transformers", "locust", "jwt", "alembic", "alembic.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

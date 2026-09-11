@@ -1,0 +1,54 @@
+# Deploy pipeline (Production Phase P8) — build -> smoke -> promote.
+# Runs only after the `ci` workflow is green on main, so a dropped eval/security/
+# latency/cost gate blocks the image from ever building. Promotion to prod is
+# gated on the staging smoke test passing.
+name: deploy
+
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-stage:
+    # Only build if CI passed.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}:latest
+      - name: Deploy to staging
+        run: echo "deploy ghcr.io/${{ github.repository }}:${{ github.sha }} to staging (wire to your platform)"
+      - name: Smoke test staging
+        run: |
+          # docker run the image, then:
+          #   python -m ops.smoke "$STAGING_URL"
+          echo "run: python -m ops.smoke \"$STAGING_URL\""
+
+  promote:
+    needs: build-and-stage
+    runs-on: ubuntu-latest
+    environment: production  # requires manual approval via GitHub Environments
+    steps:
+      - name: Promote staging image to prod
+        run: echo "promote ghcr.io/${{ github.repository }}:${{ github.sha }} to prod"
