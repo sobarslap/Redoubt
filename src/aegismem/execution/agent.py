@@ -24,7 +24,7 @@ from aegismem.api.models import AgentRequest, AgentResponse, Citation, RunStatus
 from aegismem.errors import AegisError, CancelledError, PermissionDeniedError
 from aegismem.execution.llm import CostGuard, LLMClient
 from aegismem.guardrails import SecurityBoundary
-from aegismem.guardrails.trust import Segment
+from aegismem.guardrails.trust import Segment, fence_segment
 from aegismem.mcp.runtime import ToolRuntime
 from aegismem.memory.models import TrustLevel
 from aegismem.observability.tracer import RunTrace, Tracer
@@ -86,10 +86,25 @@ class AgentRuntime:
                 try:
                     ack = self.tools.execute_tool(call.tool, call.args, operation=call.operation)
                     result = self.tools.read_tool_result(ack.ref).output
-                    line = f"[tool:{call.tool}] {result}"
+                    # Tool output is attacker-controllable (TOOL_RESULT trust): fence it
+                    # with a per-step nonce so injected text can't forge the fence or a
+                    # trusted label to escape into instructions.
+                    line = fence_segment(
+                        Segment(
+                            trust=TrustLevel.TOOL_RESULT,
+                            content=result,
+                            label=f"tool:{call.tool}",
+                        )
+                    )
                 except PermissionDeniedError as exc:
                     # Refusal is data too — the model sees it and must proceed safely.
-                    line = f"[tool:{call.tool}] REFUSED: {exc.envelope.message}"
+                    line = fence_segment(
+                        Segment(
+                            trust=TrustLevel.TOOL_RESULT,
+                            content=f"REFUSED: {exc.envelope.message}",
+                            label=f"tool:{call.tool}",
+                        )
+                    )
                 transcript += "\n" + line
         return "", steps  # unreachable; the loop returns inside
 

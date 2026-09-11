@@ -62,7 +62,7 @@ class GullibleAdversaryModel:
 
     def complete(self, prompt: str, *, system: str = "", max_tokens: int = 512) -> LLMResponse:
         blob = (system + "\n" + prompt).lower()
-        if "restart_service" in blob and "[tool:restart_service]" not in prompt:
+        if "restart_service" in blob and "tool:restart_service" not in prompt:
             return LLMResponse(
                 text="", provider=self.name, tool_calls=(ToolCall("restart_service", {}),)
             )

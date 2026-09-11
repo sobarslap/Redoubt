@@ -82,6 +82,17 @@ def _fence(nonce: str, segment: Segment) -> str:
     return f"{open_d}\n{segment.content}\n{close_d}"
 
 
+def fence_segment(segment: Segment, *, nonce: str | None = None) -> str:
+    """Fence a single untrusted segment with a randomized nonce delimiter.
+
+    For callers (like the tool loop) that append untrusted content to a running
+    transcript rather than assembling a fresh context. The nonce is unpredictable
+    per call so injected text cannot pre-close the fence or forge a different
+    trust label; the immutable rules still instruct the model to distrust it.
+    """
+    return _fence(nonce or secrets.token_hex(8), segment)
+
+
 def assemble_context(
     *,
     system: str,

@@ -85,7 +85,8 @@ class MockProvider:
         low = prompt.lower()
         for needle, calls in self.tool_plan:
             # Emit the tool calls only until their results are already in context.
-            if needle.lower() in low and not all(f"[tool:{c.tool}]" in prompt for c in calls):
+            # Results are fenced as untrusted data labeled "tool:<name>" (see agent._reason).
+            if needle.lower() in low and not all(f"tool:{c.tool}" in prompt for c in calls):
                 return LLMResponse(
                     provider=self.name,
                     model=self.model,
