@@ -115,6 +115,25 @@ def test_updated_fact_supersedes_old(store: SQLiteMemoryStore) -> None:
     assert store.provenance(old_id).superseded_by == [result.new_memory.id]
 
 
+def test_supersede_of_candidate_routes_to_review_not_corruption(store: SQLiteMemoryStore) -> None:
+    # A CANDIDATE record is 'live' for conflict candidacy but cannot legally reach
+    # SUPERSEDED. A high-confidence UPDATES verdict against it must NOT attempt the
+    # illegal transition (which would leave a half-applied ACTIVE new record and two
+    # contradictory live memories) — it parks for review instead. Upholds
+    # memory_corruption = 0.
+    cand = store.create(MemoryCreate(type=MemoryType.SEMANTIC, content="Primary DB is MySQL 8.0"))
+    assert store.get(cand.id).status is MemoryStatus.CANDIDATE
+    resolver = ConflictResolver(store, StubClassifier(ConflictRelation.UPDATES, 0.94))
+    result = resolver.ingest(
+        MemoryCreate(type=MemoryType.SEMANTIC, content="Primary DB migrated to Postgres 16"),
+        existing=[store.get(cand.id)],
+    )
+    assert result.decision is Decision.HUMAN_REVIEW  # not COMMIT_SUPERSEDE
+    assert store.get(cand.id).status is MemoryStatus.CANDIDATE  # untouched
+    # No new ACTIVE memory was created behind a failed supersede.
+    assert store.list(status=MemoryStatus.ACTIVE) == []
+
+
 def test_high_confidence_contradiction_supersedes(store: SQLiteMemoryStore) -> None:
     old_id = _active(store, "Service runs in us-east-1")
     resolver = ConflictResolver(store, StubClassifier(ConflictRelation.CONTRADICTS, 0.9))

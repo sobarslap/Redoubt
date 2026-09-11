@@ -160,7 +160,19 @@ class ConflictResolver:
         # 3. Deterministic policy layer.
         if verdict.confidence >= self._commit:
             if verdict.relation in {ConflictRelation.UPDATES, ConflictRelation.CONTRADICTS}:
-                return self._commit_supersede(candidate, existing_rec, verdict)
+                # Only an ACTIVE record can legally reach SUPERSEDED. A not-yet-active
+                # candidate (CANDIDATE/VALIDATING) is in `live` too; superseding it
+                # would raise mid-mutation and leave a half-applied ACTIVE new record
+                # (breaking memory_corruption = 0). Park those for human review instead.
+                if existing_rec.status is MemoryStatus.ACTIVE:
+                    return self._commit_supersede(candidate, existing_rec, verdict)
+                review_id = self._store.enqueue_review(candidate, existing_rec.id, verdict)
+                return ResolutionResult(
+                    decision=Decision.HUMAN_REVIEW,
+                    verdict=verdict,
+                    existing_id=existing_rec.id,
+                    review_id=review_id,
+                )
             if verdict.relation is ConflictRelation.DUPLICATE:
                 return ResolutionResult(
                     decision=Decision.REJECT_DUPLICATE,
@@ -198,7 +210,18 @@ class ConflictResolver:
     def _commit_supersede(
         self, candidate: MemoryCreate, existing: MemoryRecord, verdict: ConflictVerdict
     ) -> ResolutionResult:
+        # Create the replacement as a (non-active) candidate first, then retire the
+        # existing record, and only then activate the new one. Ordered this way, a
+        # failure at any step never leaves two ACTIVE contradictory memories: the
+        # worst case is a stray CANDIDATE, which is not active truth.
         new = self._store.create(candidate.model_copy(update={"supersedes": existing.id}))
+        self._store.transition(
+            existing.id,
+            MemoryStatus.SUPERSEDED,
+            reason=f"superseded by {new.id} ({verdict.relation}, conf {verdict.confidence:.2f})",
+            source="conflict_resolver",
+            trigger="ingest",
+        )
         new = self._store.transition(
             new.id,
             MemoryStatus.ACTIVE,
@@ -207,13 +230,6 @@ class ConflictResolver:
             trigger="ingest",
         )
         self._store.add_edge(new.id, existing.id, "supersedes")
-        self._store.transition(
-            existing.id,
-            MemoryStatus.SUPERSEDED,
-            reason=f"superseded by {new.id} ({verdict.relation}, conf {verdict.confidence:.2f})",
-            source="conflict_resolver",
-            trigger="ingest",
-        )
         return ResolutionResult(
             decision=Decision.COMMIT_SUPERSEDE,
             verdict=verdict,
