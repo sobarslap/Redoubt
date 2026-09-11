@@ -1,0 +1,14 @@
+{"id": "ret_00", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "PostgreSQL migration during the change window"}, "expect": {"gold": ["m_pg"]}}
+{"id": "ret_01", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "MySQL 8.0 legacy checkout before migration"}, "expect": {"gold": ["m_mysql"]}}
+{"id": "ret_02", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "Redis maxmemory LRU eviction cache"}, "expect": {"gold": ["m_redis"]}}
+{"id": "ret_03", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "metrics.prod.internal:9090"}, "expect": {"gold": ["m_host"]}}
+{"id": "ret_04", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "connection pool exhaustion restart service scale replicas runbook"}, "expect": {"gold": ["m_sop"]}}
+{"id": "ret_05", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "PagerDuty checkout p95 latency SLO alert"}, "expect": {"gold": ["m_alert"]}}
+{"id": "ret_06", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "deploy cadence weekly Thursdays blue-green pipeline"}, "expect": {"gold": ["m_deploy"]}}
+{"id": "ret_07", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "payments service owned transactions platform team"}, "expect": {"gold": ["m_owner"]}}
+{"id": "ret_08", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "TLS certificates gateway cert-manager renew"}, "expect": {"gold": ["m_tls"]}}
+{"id": "ret_09", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "read replica lag threshold failover 30 seconds"}, "expect": {"gold": ["m_replica"]}}
+{"id": "ret_10", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "what database did we migrate the checkout service to"}, "expect": {"gold": ["m_pg", "m_mysql"]}}
+{"id": "ret_11", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "how do we recover from connection pool exhaustion"}, "expect": {"gold": ["m_sop"]}}
+{"id": "ret_12", "category": "retrieval", "description": "hybrid retrieval finds the gold memory", "params": {"query": "who owns the payments service"}, "expect": {"gold": ["m_owner"]}}
+{"id": "ret_empty_00", "category": "retrieval", "description": "nothing clears the threshold -> EMPTY MEMORY, not a vague fact", "params": {"query": "xylophone zeppelin marmalade kumquat glockenspiel"}, "expect": {"gold": [], "empty": true}}

@@ -1,0 +1,40 @@
+# Full AegisMem stack for staging/local prod (Production Phase P8).
+#   docker compose -f ops/docker-compose.yml up --build
+# Postgres+pgvector is the production MemoryStore; the service resolves it via
+# AEGISMEM_PG_DSN. Provider keys come from the environment, never baked into the
+# image. For the Langfuse trace backend, compose in ops/docker-compose.langfuse.yml.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-aegis}
+      POSTGRES_DB: aegismem
+    volumes:
+      - aegis-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  service:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      AEGISMEM_PG_DSN: postgresql://aegis:${PG_PASSWORD:-aegis}@db:5432/aegismem
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+    restart: unless-stopped
+
+volumes:
+  aegis-db:
