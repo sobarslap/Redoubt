@@ -22,9 +22,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import aegismem.guardrails.pii as pii
 from aegismem.config.settings import Settings, get_settings
 from aegismem.errors import GuardrailError
-from aegismem.guardrails import pii
 from aegismem.guardrails.injection import InjectionVerdict, PromptInjectionScanner
 from aegismem.guardrails.output import OutputVerdict, filter_output
 from aegismem.guardrails.sanitize import (

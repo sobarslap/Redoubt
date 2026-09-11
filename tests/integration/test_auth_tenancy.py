@@ -8,6 +8,7 @@ Runs fully in-proc.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 from pathlib import Path
 
@@ -31,6 +32,8 @@ from aegismem.retrieval.router import JITRouter
 from aegismem.retrieval.vector import VectorIndex
 from aegismem.security.audit import AuditLog
 from aegismem.security.auth import ApiKeyStore, FixedWindowQuota, Principal
+
+_HAS_JWT = importlib.util.find_spec("jwt") is not None
 
 
 def _runtime(tmp_path) -> AgentRuntime:
@@ -106,6 +109,77 @@ def test_privileged_actions_are_audited(tmp_path) -> None:
     actions = [(e.action, e.outcome) for e in audit.entries]
     assert ("run.create", "ok") in actions
     assert ("auth.fail", "denied") in actions
+
+
+# -- durable audit sink ------------------------------------------------------
+
+
+def test_jsonl_audit_sink_persists_entries(tmp_path) -> None:
+    from aegismem.security.audit import AuditLog, JSONLAuditSink
+
+    path = tmp_path / "audit.jsonl"
+    log = AuditLog(sink=JSONLAuditSink(path))
+    log.record("run.create", principal_id="alice", tenant="tenant-a", detail="req_1")
+    log.record("auth.fail", outcome="denied")
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
+    assert len(lines) == 2
+    import json
+
+    first = json.loads(lines[0])
+    assert first["action"] == "run.create" and first["principal_id"] == "alice"
+
+
+# -- OIDC / JWT bearer auth (gated on PyJWT) ---------------------------------
+
+
+@pytest.mark.skipif(not _HAS_JWT, reason="PyJWT not installed (auth group)")
+def test_oidc_bearer_authorizes_and_maps_tenant(tmp_path) -> None:
+    import jwt
+
+    from aegismem.security.auth import OIDCVerifier
+
+    secret = "test-signing-secret"
+    verifier = OIDCVerifier(
+        issuer="https://idp.example",
+        audience="aegismem",
+        signing_key=secret,
+        algorithms=("HS256",),
+        tenant_claim="tenant",
+    )
+    token = jwt.encode(
+        {
+            "sub": "user-9",
+            "tenant": "tenant-z",
+            "scope": "runs:write",
+            "iss": "https://idp.example",
+            "aud": "aegismem",
+        },
+        secret,
+        algorithm="HS256",
+    )
+    c = TestClient(create_app(_runtime(tmp_path), oidc=verifier))
+    # No token -> 401.
+    assert c.post("/runs", json={"session_id": "s", "input": "x"}).status_code == 401
+    # Valid bearer -> 200.
+    r = c.post(
+        "/runs",
+        json={"session_id": "s", "input": "checkout?"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    # And the verifier maps claims to a Principal with the tenant.
+    principal = verifier.verify(f"Bearer {token}")
+    assert principal.principal_id == "user-9" and principal.tenant == "tenant-z"
+
+
+@pytest.mark.skipif(not _HAS_JWT, reason="PyJWT not installed (auth group)")
+def test_oidc_rejects_tampered_token(tmp_path) -> None:
+    from aegismem.errors import AuthError
+    from aegismem.security.auth import OIDCVerifier
+
+    verifier = OIDCVerifier(issuer="i", audience="a", signing_key="k", algorithms=("HS256",))
+    with pytest.raises(AuthError):
+        verifier.verify("Bearer not.a.jwt")
 
 
 # -- tenant isolation (adversarial) ------------------------------------------

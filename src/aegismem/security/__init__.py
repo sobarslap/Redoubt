@@ -6,11 +6,12 @@ defends the agent's *reasoning* against adversarial content); this defends the
 *service* against unauthenticated, over-quota, or cross-tenant access.
 """
 
-from aegismem.security.audit import AuditEntry, AuditLog
+from aegismem.security.audit import AuditEntry, AuditLog, JSONLAuditSink
 from aegismem.security.auth import (
     ApiKeyStore,
     AuthContext,
     FixedWindowQuota,
+    OIDCVerifier,
     Principal,
 )
 
@@ -20,5 +21,7 @@ __all__ = [
     "AuditLog",
     "AuthContext",
     "FixedWindowQuota",
+    "JSONLAuditSink",
+    "OIDCVerifier",
     "Principal",
 ]

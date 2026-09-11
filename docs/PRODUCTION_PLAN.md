@@ -51,7 +51,9 @@ touched a live API. Wire real calls behind the existing seam.
 > when `sentence-transformers` is absent). All optional deps (`pg` group) are
 > import-guarded. A parity test asserts identical observable state across SQLite
 > and pgvector on a fixed op sequence, gated on `AEGISMEM_PG_DSN` so keyless CI
-> skips it. *Remaining for a full deployment: Alembic migrations and the index
+> skips it. Alembic migrations now live in `migrations/` — an initial revision
+> reuses `PgVectorMemoryStore._DDL` as the single source of truth so schema can't
+> drift (`migrations` group). *Remaining for a full deployment: the index
 > build/rebuild job (documented, not yet scripted).*
 
 - `PgVectorMemoryStore` (Postgres + pgvector) — or Qdrant — implementing the exact `MemoryStore` protocol.
@@ -94,7 +96,10 @@ touched a live API. Wire real calls behind the existing seam.
 > adversarially. An `AuditLog` records privileged actions (run.create, auth.fail,
 > auth.quota, run.cancel). Provider secrets come only from the environment; a test
 > and a CI **gitleaks** step keep secret material out of config and history.
-> *Remaining: OIDC (beyond API keys) and a durable audit sink — deployment-specific.*
+> OIDC/JWT bearer auth is also supported (`OIDCVerifier`, `auth` group) — the
+> service accepts an API key or a verified bearer token — and `JSONLAuditSink`
+> gives a durable append-only (fsync'd) audit trail. *Remaining: a distributed run
+> registry (in-process today; swap for Redis in a multi-node deploy).*
 
 - API-key or OIDC auth on the service; per-caller rate limiting and quotas.
 - Secrets via env/secret-manager (never in `models.yaml`); provider keys injected at runtime.
@@ -168,8 +173,9 @@ touched a live API. Wire real calls behind the existing seam.
 > behind a manual `production` environment approval — so a dropped
 > eval/security/latency gate blocks the image, and a failed smoke blocks
 > promotion. A `serve` CLI runs uvicorn; `docs/RUNBOOK.md` covers migrations,
-> SHA-tag rollback, and alert response. *Remaining: point the workflow's
-> deploy/promote steps at your actual platform + wire Alembic revisions.*
+> SHA-tag rollback, and alert response. Alembic migrations are scaffolded in
+> `migrations/` (initial revision applies the pgvector schema). *Remaining: point
+> the workflow's deploy/promote steps at your actual platform.*
 
 - Containerize (multi-stage Docker), IaC for the service + Postgres/Qdrant + Langfuse, staging + prod environments.
 - CI/CD extends the existing pipeline: format → lint → type → unit → integration → security → adversarial → **eval** → **perf** → build image → deploy staging → smoke → promote. A dropped eval/security/latency/cost gate blocks deploy.

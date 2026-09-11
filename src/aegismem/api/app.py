@@ -43,7 +43,13 @@ from aegismem.retrieval.reranker import OverlapReranker
 from aegismem.retrieval.router import JITRouter
 from aegismem.retrieval.vector import VectorIndex
 from aegismem.security.audit import AuditLog
-from aegismem.security.auth import ApiKeyStore, AuthContext, FixedWindowQuota, Principal
+from aegismem.security.auth import (
+    ApiKeyStore,
+    AuthContext,
+    FixedWindowQuota,
+    OIDCVerifier,
+    Principal,
+)
 
 # HTTP status per error category — the envelope drives the code, consistently.
 _STATUS: dict[ErrorCategory, int] = {
@@ -110,6 +116,7 @@ def create_app(
     provenance_store: object | None = None,
     max_in_flight: int = 32,
     api_keys: ApiKeyStore | None = None,
+    oidc: OIDCVerifier | None = None,
     quota: FixedWindowQuota | None = None,
     audit: AuditLog | None = None,
     metrics: MetricsRegistry | None = None,
@@ -125,12 +132,22 @@ def create_app(
 
     def authenticate(
         x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+        authorization: str | None = Header(default=None),
     ) -> AuthContext:
-        # Auth is opt-in: with no key store the service runs open (dev/library mode).
-        if api_keys is None:
+        # Auth is opt-in: with neither an API-key store nor an OIDC verifier the
+        # service runs open (dev/library mode). When both are configured, an
+        # X-API-Key wins; otherwise a Bearer token is verified via OIDC.
+        if api_keys is None and oidc is None:
             return _ANON
         try:
-            principal = api_keys.authenticate(x_api_key)
+            if x_api_key is not None and api_keys is not None:
+                principal = api_keys.authenticate(x_api_key)
+            elif oidc is not None:
+                principal = oidc.verify(authorization)
+            elif api_keys is not None:
+                principal = api_keys.authenticate(x_api_key)  # -> AuthError (missing key)
+            else:  # pragma: no cover - unreachable given the guard above
+                return _ANON
         except AegisError as exc:
             audit.record("auth.fail", detail=exc.envelope.message, outcome="denied")
             raise

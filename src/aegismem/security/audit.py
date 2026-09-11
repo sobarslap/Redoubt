@@ -9,9 +9,11 @@ In-process by default; a deployment points ``sink`` at a durable/WORM store.
 from __future__ import annotations
 
 import contextlib
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -54,3 +56,26 @@ class AuditLog:
             with contextlib.suppress(Exception):  # auditing must never break the request path
                 self.sink(entry)
         return entry
+
+
+@dataclass
+class JSONLAuditSink:
+    """Durable append-only audit sink — one JSON line per entry, fsync'd.
+
+    A file-backed default for deployments; append-only + fsync gives a
+    tamper-evident-ish trail on ordinary disks, and the same interface fronts a
+    WORM bucket or SIEM forwarder in a hardened environment. Wire it in:
+    ``AuditLog(sink=JSONLAuditSink("audit/audit.jsonl"))``.
+    """
+
+    path: str | Path = "audit/audit.jsonl"
+
+    def __call__(self, entry: AuditEntry) -> None:
+        p = Path(self.path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry.__dict__, ensure_ascii=False) + "\n")
+            fh.flush()
+            import os
+
+            os.fsync(fh.fileno())

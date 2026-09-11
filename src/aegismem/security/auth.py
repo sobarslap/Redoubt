@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from aegismem.errors import AuthError, QuotaExceededError
 
@@ -83,6 +84,66 @@ class FixedWindowQuota:
                 f"quota exceeded for {principal_id!r} "
                 f"({self.max_requests}/{self.window_seconds:.0f}s)"
             )
+
+
+@dataclass
+class OIDCVerifier:
+    """Verify an OIDC/JWT bearer token and map its claims to a `Principal`.
+
+    Import-guarded (`PyJWT`, `auth` group). In production, pass a `jwks_url` and the
+    tokens are verified against the IdP's rotating public keys; for tests/offline a
+    static `signing_key` (symmetric) can be supplied instead. The `tenant_claim`
+    names the JWT claim that carries the tenant (defaults to ``"tenant"``).
+    """
+
+    issuer: str
+    audience: str
+    jwks_url: str | None = None
+    signing_key: str | None = None
+    algorithms: tuple[str, ...] = ("RS256",)
+    tenant_claim: str = "tenant"
+    scopes_claim: str = "scope"
+    _jwk_client: Any = field(default=None, repr=False)
+
+    def _key_for(self, token: str) -> Any:
+        if self.signing_key is not None:
+            return self.signing_key
+        import jwt
+
+        if self.jwks_url is None:
+            raise AuthError("OIDC verifier needs a signing_key or a jwks_url")
+        if self._jwk_client is None:
+            self._jwk_client = jwt.PyJWKClient(self.jwks_url)
+        return self._jwk_client.get_signing_key_from_jwt(token).key
+
+    def verify(self, bearer_token: str | None) -> Principal:
+        if not bearer_token:
+            raise AuthError("missing bearer token")
+        token = bearer_token.removeprefix("Bearer ").strip()
+        try:
+            import jwt
+
+            claims = jwt.decode(
+                token,
+                self._key_for(token),
+                algorithms=list(self.algorithms),
+                audience=self.audience,
+                issuer=self.issuer,
+            )
+        except AuthError:
+            raise
+        except Exception as exc:
+            raise AuthError(f"invalid bearer token: {exc}") from exc
+        sub = claims.get("sub")
+        if not sub:
+            raise AuthError("token missing subject")
+        scopes = claims.get(self.scopes_claim, "")
+        scope_set = frozenset(scopes.split()) if isinstance(scopes, str) else frozenset(scopes)
+        return Principal(
+            principal_id=str(sub),
+            tenant=str(claims.get(self.tenant_claim, "default")),
+            scopes=scope_set,
+        )
 
 
 @dataclass(frozen=True)

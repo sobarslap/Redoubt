@@ -21,8 +21,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import aegismem.guardrails.pii as pii
 from aegismem.errors import GuardrailError
-from aegismem.guardrails import pii
 from aegismem.guardrails.injection import InjectionVerdict, PromptInjectionScanner
 from aegismem.guardrails.trust import is_untrusted, trust_rank
 from aegismem.mcp.gateway import ToolResult

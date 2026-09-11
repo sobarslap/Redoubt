@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from aegismem.guardrails import pii
+import aegismem.guardrails.pii as pii
 
 
 @dataclass(slots=True, frozen=True)

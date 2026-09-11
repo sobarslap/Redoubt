@@ -62,6 +62,29 @@ def test_pgstore_missing_driver_raises_typed_error(monkeypatch) -> None:
         PgVectorMemoryStore("postgresql://localhost/nope")
 
 
+def test_alembic_initial_migration_matches_store_ddl() -> None:
+    # The migration reuses PgVectorMemoryStore._DDL, so schema can't drift. Guard
+    # on alembic being installed (migrations group). Loaded by path — Alembic
+    # revision files are named with a leading digit and loaded by file, not import.
+    pytest.importorskip("alembic")
+    import importlib.util
+    from pathlib import Path
+
+    path = Path("migrations/versions/0001_initial_schema.py")
+    spec = importlib.util.spec_from_file_location("_mig_0001", path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.revision == "0001_initial"
+    assert mod.down_revision is None
+
+    from aegismem.memory.pgstore import _DDL
+
+    ddl = _DDL.format(dim=384)
+    for table in ("memories", "transitions", "provenance_edges", "review_queue"):
+        assert f"CREATE TABLE IF NOT EXISTS {table}" in ddl
+
+
 # -- gated parity (needs a live Postgres with pgvector) ----------------------
 
 

@@ -31,6 +31,9 @@ retrieval = [
 tokens = ["tiktoken>=0.8"]
 # Optional ML prompt-injection classifier — defense-in-depth (Production Phase P6).
 guard-ml = ["transformers>=4.44", "torch>=2.2"]
+# OIDC/JWT bearer auth + schema migrations (Production Phase P4/P8).
+auth = ["pyjwt[crypto]>=2.9"]
+migrations = ["alembic>=1.13"]
 # Production memory backend — Postgres + pgvector (Production Phase P2).
 pg = [
     "psycopg[binary]>=3.2",
@@ -86,7 +89,7 @@ plugins = ["pydantic.mypy"]
 # source guards each import, so a missing stub at type-check time is expected.
 [[tool.mypy.overrides]]
 module = ["tiktoken", "sentence_transformers", "psycopg_pool", "pgvector", "pgvector.*",
-    "transformers", "locust"]
+    "transformers", "locust", "jwt", "alembic", "alembic.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
