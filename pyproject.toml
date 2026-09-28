@@ -89,7 +89,8 @@ plugins = ["pydantic.mypy"]
 # source guards each import, so a missing stub at type-check time is expected.
 [[tool.mypy.overrides]]
 module = ["tiktoken", "sentence_transformers", "psycopg_pool", "pgvector", "pgvector.*",
-    "transformers", "locust", "jwt", "alembic", "alembic.*"]
+    "transformers", "locust", "jwt", "alembic", "alembic.*",
+    "google", "google.*", "anthropic", "anthropic.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -172,9 +172,9 @@ class GeminiProvider:  # pragma: no cover - requires network + key
 
     name = "gemini"
 
-    def __init__(self, model: str = "gemini-2.5-flash", api_key: str | None = None) -> None:
+    def __init__(self, model: str = "gemini-flash-latest", api_key: str | None = None) -> None:
         try:
-            from google import genai  # type: ignore[import-not-found]
+            from google import genai
         except Exception as exc:
             raise LLMError(f"google-genai not installed: {exc}", retryable=False) from exc
         self._client = genai.Client(api_key=api_key) if api_key else genai.Client()
@@ -186,7 +186,12 @@ class GeminiProvider:  # pragma: no cover - requires network + key
             resp = self._client.models.generate_content(model=self.model, contents=full)
             text = getattr(resp, "text", "") or ""
         except Exception as exc:
-            raise LLMError(f"gemini request failed: {exc}") from exc
+            # A 4xx (auth, bad request, or 429 quota) won't succeed on an immediate
+            # retry — retrying just burns more of the rate-limited quota and delays
+            # the error. Only 5xx / network faults are worth retrying + falling back.
+            code = getattr(exc, "code", None)
+            retryable = not (isinstance(code, int) and 400 <= code < 500)
+            raise LLMError(f"gemini request failed: {exc}", retryable=retryable) from exc
         return LLMResponse(
             text=text,
             provider=self.name,
@@ -201,7 +206,7 @@ class ClaudeProvider:  # pragma: no cover - requires network + key
 
     def __init__(self, model: str = "claude-opus-5", api_key: str | None = None) -> None:
         try:
-            import anthropic  # type: ignore[import-not-found]
+            import anthropic
         except Exception as exc:
             raise LLMError(f"anthropic not installed: {exc}", retryable=False) from exc
         self._client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()

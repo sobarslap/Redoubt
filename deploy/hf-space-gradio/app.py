@@ -111,11 +111,19 @@ def ask(question: str) -> tuple[str, str]:
     # timeout). Say so explicitly instead of showing an empty "refusal" or hanging.
     if resp.status == RunStatus.FAILED:
         detail = resp.error.message if resp.error else "unknown error"
-        answer_md = (
-            "### ⚠️ Model call failed\n\nThe language model didn't return a response — "
-            "usually a transient rate-limit or overload. Please try again in a moment.\n\n"
-            f"`{detail}`"
-        )
+        low = detail.lower()
+        if "429" in low or "resource_exhausted" in low or "quota" in low:
+            note = (
+                "You've hit the **free-tier rate limit** (Gemini allows only a few "
+                "requests per minute). Wait ~30-60 seconds and try again - this is a "
+                "quota limit, not a bug. (Run keyless to use the offline mock with no limit.)"
+            )
+        else:
+            note = (
+                "The language model didn't return a response — usually a transient "
+                "overload. Please try again in a moment."
+            )
+        answer_md = f"### ⚠️ Model call failed\n\n{note}\n\n`{detail}`"
         return answer_md, "\n".join([ids_line, tokens_line])
 
     # Succeeded with no citations means retrieval returned EMPTY MEMORY — nothing
