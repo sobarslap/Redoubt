@@ -15,6 +15,9 @@ a real model instead of the keyless mock.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import gradio as gr
 
 from aegismem.api.models import AgentRequest, RunStatus
@@ -44,9 +47,39 @@ _MEMORIES: list[tuple[str, str]] = [
 ]
 
 
+def _load_dotenv() -> None:
+    """Populate os.environ from a local .env file, if present.
+
+    A convenience for local runs so the API key is set once in a gitignored
+    file instead of re-exported in every new terminal. Walks up from this file
+    and the CWD looking for a .env; only sets keys that aren't already in the
+    environment (a real exported env var still wins). The core factory still
+    reads keys only from os.environ — this just fills it first.
+    """
+    seen: set[Path] = set()
+    for start in (Path(__file__).resolve(), Path.cwd()):
+        for directory in (start, *start.parents):
+            candidate = directory / ".env"
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            if not candidate.is_file():
+                continue
+            for raw in candidate.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip("'").strip('"')
+                if key and key not in os.environ:
+                    os.environ[key] = value
+
+
 def _build_runtime() -> AgentRuntime:
     import tempfile
 
+    _load_dotenv()
     trace_store = JSONLTraceStore(f"{tempfile.gettempdir()}/aegismem-ui.jsonl")
     router = JITRouter(BM25Index(), VectorIndex(HashingEmbedder()), OverlapReranker(), top_k=3)
     llm = build_client("workhorse")
