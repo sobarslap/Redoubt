@@ -68,6 +68,14 @@ def _build_runtime() -> AgentRuntime:
                 "replicas. [cites grounded memory]",
             ),
         ]
+    banner = (
+        "real Gemini model (grounded answers)"
+        if not isinstance(llm, MockProvider)
+        else "OFFLINE MOCK (scripted answers) — set GEMINI_API_KEY for real answers"
+    )
+    print("=" * 70)
+    print(f"  AegisMem demo  |  LLM provider: {llm.name}  ->  {banner}")
+    print("=" * 70)
     runtime = AgentRuntime(
         llm=llm,
         router=router,
