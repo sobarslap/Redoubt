@@ -92,7 +92,7 @@ def ask(question: str) -> tuple[str, str]:
     # Never let an exception leave the UI spinning with nothing shown.
     try:
         resp = RUNTIME.handle(AgentRequest(session_id="demo", input=question))
-    except Exception as exc:  # noqa: BLE001 - surface any failure to the user
+    except Exception as exc:  # surface any failure to the user, never hang
         return (
             "### ⚠️ Something went wrong\n\nThe request failed before it finished. "
             "This is usually a transient model issue — please try again.\n\n"
