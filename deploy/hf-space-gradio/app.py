@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import gradio as gr
 
-from aegismem.api.models import AgentRequest
+from aegismem.api.models import AgentRequest, RunStatus
 from aegismem.execution.agent import AgentRuntime
 from aegismem.execution.factory import build_client
 from aegismem.execution.llm import MockProvider
@@ -88,7 +88,16 @@ def ask(question: str) -> tuple[str, str]:
     question = (question or "").strip()
     if not question:
         return "_Ask something to see a grounded answer._", ""
-    resp = RUNTIME.handle(AgentRequest(session_id="demo", input=question))
+
+    # Never let an exception leave the UI spinning with nothing shown.
+    try:
+        resp = RUNTIME.handle(AgentRequest(session_id="demo", input=question))
+    except Exception as exc:  # noqa: BLE001 - surface any failure to the user
+        return (
+            "### ⚠️ Something went wrong\n\nThe request failed before it finished. "
+            "This is usually a transient model issue — please try again.\n\n"
+            f"`{type(exc).__name__}: {exc}`"
+        ), ""
 
     ids_line = (
         f"**status** `{resp.status.value}` · **run** `{resp.run_id}` · **trace** `{resp.trace_id}`"
@@ -98,8 +107,19 @@ def ask(question: str) -> tuple[str, str]:
         f"**tool calls** {resp.usage.tool_calls}"
     )
 
-    # No citations means retrieval returned EMPTY MEMORY — nothing cleared the
-    # relevance gate. Show that as an explicit refusal, not a vague answer.
+    # A failed run is NOT a refusal — the model call errored (rate-limit / overload /
+    # timeout). Say so explicitly instead of showing an empty "refusal" or hanging.
+    if resp.status == RunStatus.FAILED:
+        detail = resp.error.message if resp.error else "unknown error"
+        answer_md = (
+            "### ⚠️ Model call failed\n\nThe language model didn't return a response — "
+            "usually a transient rate-limit or overload. Please try again in a moment.\n\n"
+            f"`{detail}`"
+        )
+        return answer_md, "\n".join([ids_line, tokens_line])
+
+    # Succeeded with no citations means retrieval returned EMPTY MEMORY — nothing
+    # cleared the relevance gate. Show that as an explicit refusal, not a vague answer.
     if not resp.citations:
         answer_md = (
             "### Refused — no grounded memory\n\n"
