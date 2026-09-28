@@ -40,3 +40,6 @@ Thumbs.db
 
 # graphify knowledge-graph artifacts (local tooling output)
 graphify-out/
+
+# Locally installed Claude Code skills (third-party tooling, not project code)
+.claude/skills/
