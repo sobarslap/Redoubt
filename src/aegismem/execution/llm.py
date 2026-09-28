@@ -286,14 +286,21 @@ class ResilientClient:
         self.name = primary.name
 
     def complete(self, prompt: str, *, system: str = "", max_tokens: int = 512) -> LLMResponse:
+        primary: Exception | None = None
         last: Exception | None = None
-        for client in self._chain:
+        for idx, client in enumerate(self._chain):
             for attempt in range(self._max_retries + 1):
                 try:
                     return client.complete(prompt, system=system, max_tokens=max_tokens)
                 except LLMError as exc:
                     last = exc
+                    if idx == 0:
+                        primary = exc
                     if not exc.envelope.retryable or attempt == self._max_retries:
                         break
                     self._sleep(self._backoff * (2**attempt))
-        raise LLMError(f"all providers exhausted: {last}", retryable=False)
+        # Surface the PRIMARY provider's failure (e.g. Gemini's 429), not the last
+        # fallback's — fallbacks are usually unconfigured (no key / no local server),
+        # so their errors ("connection refused") mask the real, actionable cause.
+        cause = primary or last
+        raise LLMError(f"primary provider failed: {cause}", retryable=False)
