@@ -1,0 +1,5 @@
+# Gradio UI + the AegisMem core package (installed from the public repo).
+# Core deps only (fastapi/pydantic/pyyaml/uvicorn) come in transitively; the
+# seeded retrieval path is pure Python, so no ML/torch wheels are needed.
+gradio>=4.44
+git+https://github.com/sobarslap/Redoubt.git@main
