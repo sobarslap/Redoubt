@@ -14,9 +14,65 @@ from collections import Counter
 
 _TOKEN = re.compile(r"[a-z0-9]+")
 
+# Common function words carry no topical signal. Dropping them keeps a stopword-only
+# overlap (e.g. a question sharing only "the"/"is"/"of" with a memory) from counting
+# as a lexical hit — which would otherwise defeat the retrieval eligibility gate and
+# the EMPTY MEMORY guarantee, letting an off-topic query cite unrelated memories.
+_STOPWORDS = frozenset(
+    [
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "but",
+        "by",
+        "do",
+        "does",
+        "for",
+        "from",
+        "has",
+        "have",
+        "how",
+        "i",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "their",
+        "them",
+        "then",
+        "there",
+        "these",
+        "this",
+        "to",
+        "was",
+        "we",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "will",
+        "with",
+        "you",
+        "your",
+    ]
+)
+
 
 def tokenize(text: str) -> list[str]:
-    return _TOKEN.findall(text.lower())
+    return [t for t in _TOKEN.findall(text.lower()) if t not in _STOPWORDS]
 
 
 class BM25Index:

@@ -35,14 +35,20 @@ from aegismem.retrieval.vector import VectorIndex
 # The facts a real ingestion pipeline would have written; seeded here so the live
 # service has something to ground on and cite.
 _MEMORIES: list[tuple[str, str]] = [
-    ("mem_runbook", "Runbook: on connection pool exhaustion restart the service and scale replicas"),
+    (
+        "mem_runbook",
+        "Runbook: on connection pool exhaustion restart the service and scale replicas",
+    ),
     ("mem_db", "The primary database for checkout is Postgres 16 (migrated from MySQL)"),
-    ("mem_metrics", "checkout p95_latency=1240ms error_rate=7.2% conns=198/200 (pool near exhaustion)"),
+    (
+        "mem_metrics",
+        "checkout p95_latency=1240ms error_rate=7.2% conns=198/200 (pool near exhaustion)",
+    ),
     ("mem_owner", "The payments service is owned by the transactions platform team"),
 ]
 
 
-def build_seeded_app():  # noqa: ANN201 - returned straight to uvicorn
+def build_seeded_app():
     trace_store = JSONLTraceStore("traces/service.jsonl")
     router = JITRouter(BM25Index(), VectorIndex(HashingEmbedder()), OverlapReranker(), top_k=3)
 

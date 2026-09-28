@@ -31,9 +31,15 @@ from aegismem.retrieval.router import JITRouter
 from aegismem.retrieval.vector import VectorIndex
 
 _MEMORIES: list[tuple[str, str]] = [
-    ("mem_runbook", "Runbook: on connection pool exhaustion restart the service and scale replicas"),
+    (
+        "mem_runbook",
+        "Runbook: on connection pool exhaustion restart the service and scale replicas",
+    ),
     ("mem_db", "The primary database for checkout is Postgres 16 (migrated from MySQL)"),
-    ("mem_metrics", "checkout p95_latency=1240ms error_rate=7.2% conns=198/200 (pool near exhaustion)"),
+    (
+        "mem_metrics",
+        "checkout p95_latency=1240ms error_rate=7.2% conns=198/200 (pool near exhaustion)",
+    ),
     ("mem_owner", "The payments service is owned by the transactions platform team"),
 ]
 
@@ -56,9 +62,18 @@ def _build_runtime() -> AgentRuntime:
                 "The checkout service errors trace to connection-pool exhaustion. "
                 "Per the runbook, restart the service and scale replicas. [cites grounded memory]",
             ),
+            (
+                "exhaustion",
+                "Connection-pool exhaustion: per the runbook, restart the service and scale "
+                "replicas. [cites grounded memory]",
+            ),
         ]
     runtime = AgentRuntime(
-        llm=llm, router=router, tracer=Tracer(trace_store), boundary=SecurityBoundary(), documents={}
+        llm=llm,
+        router=router,
+        tracer=Tracer(trace_store),
+        boundary=SecurityBoundary(),
+        documents={},
     )
     for mem_id, content in _MEMORIES:
         runtime.remember(mem_id, content)
@@ -75,24 +90,31 @@ def ask(question: str) -> tuple[str, str]:
         return "_Ask something to see a grounded answer._", ""
     resp = RUNTIME.handle(AgentRequest(session_id="demo", input=question))
 
-    answer_md = f"### Answer\n\n{resp.output}\n"
-    if not resp.citations:
-        answer_md += (
-            "\n> ⚠️ **No grounding found.** The runtime refuses to fabricate — it only "
-            "answers from memories it can cite. Try a question about the checkout incident."
-        )
-
-    lines = [
-        f"**status** `{resp.status.value}` · **run** `{resp.run_id}` · "
-        f"**trace** `{resp.trace_id}`",
+    ids_line = (
+        f"**status** `{resp.status.value}` · **run** `{resp.run_id}` · **trace** `{resp.trace_id}`"
+    )
+    tokens_line = (
         f"**tokens** in {resp.usage.input_tokens} / out {resp.usage.output_tokens} · "
-        f"**tool calls** {resp.usage.tool_calls}",
-        "",
-    ]
-    if resp.citations:
-        lines.append("### Grounded on")
-        for c in resp.citations:
-            lines.append(f"- `{c.memory_id}`  ·  score **{c.score:.3f}**  \n  {c.snippet}")
+        f"**tool calls** {resp.usage.tool_calls}"
+    )
+
+    # No citations means retrieval returned EMPTY MEMORY — nothing cleared the
+    # relevance gate. Show that as an explicit refusal, not a vague answer.
+    if not resp.citations:
+        answer_md = (
+            "### Refused — no grounded memory\n\n"
+            "Nothing in memory is relevant to that question, so the runtime **won't "
+            "answer** — it refuses to fabricate rather than guess.\n"
+        )
+        evidence_md = "\n".join(
+            [ids_line, tokens_line, "", "**Grounded on**", "_EMPTY MEMORY — no memory was cited._"]
+        )
+        return answer_md, evidence_md
+
+    answer_md = f"### Answer\n\n{resp.output}\n"
+    lines = [ids_line, tokens_line, "", "### Grounded on"]
+    for c in resp.citations:
+        lines.append(f"- `{c.memory_id}`  ·  score **{c.score:.3f}**  \n  {c.snippet}")
     evidence_md = "\n".join(lines)
     return answer_md, evidence_md
 
@@ -115,7 +137,7 @@ hallucinate.
 _EXAMPLES = [
     "why is the checkout service erroring?",
     "what database does checkout use?",
-    "give the remediation for the incident",
+    "how do we fix connection pool exhaustion?",
     "what is the capital of France?",
 ]
 
