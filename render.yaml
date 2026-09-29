@@ -12,7 +12,7 @@ services:
     runtime: python
     plan: free
     # Install the runtime from the repo itself (no git+ self-clone), then Gradio.
-    buildCommand: "pip install --upgrade pip && pip install . && pip install gradio"
+    buildCommand: "pip install --upgrade pip && pip install . && pip install gradio google-genai"
     startCommand: "python deploy/hf-space-gradio/app.py"
     envVars:
       - key: PYTHON_VERSION
