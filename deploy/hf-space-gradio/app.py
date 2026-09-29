@@ -264,4 +264,11 @@ with gr.Blocks(title="AegisMem — agent runtime", theme=_THEME, css=_CSS) as de
     q.submit(ask, inputs=q, outputs=[answer, evidence])
 
 if __name__ == "__main__":
-    demo.launch()
+    # Bind to 0.0.0.0 and the host-provided $PORT so the same app runs locally,
+    # on Hugging Face, and on Render (which injects PORT). Falls back to Gradio's
+    # default 7860 for a bare local run.
+    # A hosted demo must accept external traffic, so bind all interfaces.
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=int(os.environ.get("PORT", "7860")),
+    )

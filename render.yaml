@@ -1,0 +1,21 @@
+# Render Blueprint — deploys the AegisMem live demo (Gradio UI over the runtime).
+#
+# Render runs Python 3.11 natively, so the real >=3.11 codebase runs unmodified
+# (unlike Hugging Face's free ZeroGPU images, which pin Python 3.10). Connect the
+# repo on Render → New → Blueprint, and it reads this file.
+#
+# Set GEMINI_API_KEY in the Render dashboard (Environment) to answer with the real
+# model; keyless, it runs the deterministic offline mock.
+services:
+  - type: web
+    name: aegismem-demo
+    runtime: python
+    plan: free
+    # Install the runtime from the repo itself (no git+ self-clone), then Gradio.
+    buildCommand: "pip install --upgrade pip && pip install . && pip install gradio"
+    startCommand: "python deploy/hf-space-gradio/app.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: GEMINI_API_KEY
+        sync: false  # set this in the dashboard; never commit the key
